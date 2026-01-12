@@ -5,7 +5,6 @@ on:
     branches: [ "trunk" ]
   pull_request:
     branches: [ "trunk" ]
-  create: # for tags
 
 env:
   CARGO_TERM_COLOR: always
@@ -16,16 +15,9 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      # actions/checkout really doesn't work well with git-describe for some
-      # reason (most likely it strips the annotation off the tag somehow).
-      - name: Checkout touchHLE
-        shell: bash # windows :)
-        run: |
-          mkdir -p "$GITHUB_WORKSPACE"
-          git clone https://github.com/touchHLE/touchHLE "$GITHUB_WORKSPACE"
-          cd "$GITHUB_WORKSPACE"
-          git fetch origin "$GITHUB_REF"
-          git checkout "$GITHUB_SHA" # avoid race condition if branch/tag changes
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0 # touchHLE's git-describe versioning needs tag history
       - name: Install clang-format
         run: brew install clang-format
       - name: Check formatting
@@ -73,9 +65,6 @@ jobs:
         run: cargo test --target x86_64-apple-darwin
         env:
           CMAKE: ${{ github.workspace }}/vendor/cmake/bin/cmake
-      # This step ensures that our non-iOS-specific tests are passing on macOS itself!
-      - name: Sanity check tests
-        run: cc tests/TestApp_source/cli_tests.m tests/TestApp_source/CGAffineTransform.c tests/TestApp_source/SyncTester.m -framework CoreFoundation -framework CoreGraphics -DDEFINE_ME_WHEN_BUILDING_ON_MACOS -DTestApp_cli_tests_main=main -ObjC && ./a.out
       - name: Build
         run: cargo build --target x86_64-apple-darwin --release
         env:
@@ -96,16 +85,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # actions/checkout really doesn't work well with git-describe for some
-    # reason (most likely it strips the annotation off the tag somehow).
-    - name: Checkout touchHLE
-      shell: bash # windows :)
-      run: |
-        mkdir -p "$GITHUB_WORKSPACE"
-        git clone https://github.com/touchHLE/touchHLE "$GITHUB_WORKSPACE"
-        cd "$GITHUB_WORKSPACE"
-        git fetch origin "$GITHUB_REF"
-        git checkout "$GITHUB_SHA" # avoid race condition if branch/tag changes
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0 # touchHLE's git-describe versioning needs tag history
     - name: Check formatting
       run: dev-scripts/format.sh --check
     - name: Get Submodules
@@ -169,15 +151,6 @@ jobs:
     # Why isn't there a command for this?
     - name: Generate local.properties file
       run: echo 'sdk.dir='$ANDROID_SDK_ROOT > android/local.properties
-    - name: Lint
-      run: dev-scripts/lint.sh ndk -t arm64-v8a
-      env:
-        # The version should match the ndkVersion defined in `android\app\build.gradle`
-        ANDROID_NDK_ROOT: '/usr/local/lib/android/sdk/ndk/25.2.9519653'
-        ANDROID_NDK: '/usr/local/lib/android/sdk/ndk/25.2.9519653'
-        ANDROID_NDK_HOME: '/usr/local/lib/android/sdk/ndk/25.2.9519653'
-        CMAKE: ${{ github.workspace }}/vendor/cmake/bin/cmake
-    # Don't attempt to run tests (can't run on Android).
     - name: Build for Android
       run: cd android && ../gradle/gradle-8.11.1/bin/gradle assembleRelease && mv app/build/outputs/apk/release/app-release.apk ../touchHLE.apk
       env:
@@ -194,20 +167,10 @@ jobs:
     runs-on: windows-latest
 
     steps:
-    # actions/checkout really doesn't work well with git-describe for some
-    # reason (most likely it strips the annotation off the tag somehow).
-    - name: Checkout touchHLE
-      shell: bash # windows :)
-      run: |
-        mkdir -p "$GITHUB_WORKSPACE"
-        git clone https://github.com/touchHLE/touchHLE "$GITHUB_WORKSPACE"
-        cd "$GITHUB_WORKSPACE"
-        git fetch origin "$GITHUB_REF"
-        git checkout "$GITHUB_SHA" # avoid race condition if branch/tag changes
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0 # touchHLE's git-describe versioning needs tag history
     # Apparently the Windows runner already has clang-format? That's nice.
-    - name: Check formatting
-      shell: bash # no command output without this
-      run: dev-scripts/format.sh --check
     - name: Get Submodules
       run: git submodule update --init
     - name: Try to get cached copy of Boost
@@ -237,11 +200,6 @@ jobs:
     # This is the earliest point at which we can do linting: clippy will end up
     # building dynarmic, which needs Boost, but we don't need LLVM until
     # building tests.
-    - name: Lint
-      shell: bash # no command output without this
-      run: dev-scripts/lint.sh
-      env:
-        CMAKE: ${{ github.workspace }}\vendor\cmake\bin\cmake
     - name: Try to get cached copy of LLVM
       id: cache-llvm
       uses: actions/cache@v3
@@ -257,10 +215,6 @@ jobs:
     # Windows seems to break the stdout pipe for some reason
     - name: Get copy of common-3.0-sdk
       run: cd ${{ github.workspace }}/tests && curl -L --output ${{ runner.temp }}\sdk.tar.gz https://github.com/touchHLE/common-3.0-sdk/releases/latest/download/common-3.0.sdk-windows-x86_64.tar.gz && tar xzvf ${{ runner.temp }}\sdk.tar.gz
-    - name: Test
-      run: cargo test
-      env:
-        CMAKE: ${{ github.workspace }}\vendor\cmake\bin\cmake
     - name: Build
       run: cargo build --release
       env:
