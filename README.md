@@ -1,6 +1,6 @@
 ## SoraHLE: High-level emulator for iPhone OS apps
 
-<img width="997" height="757" alt="image" src="https://github.com/user-attachments/assets/2d02327b-acf7-4b22-bab9-ce75042d22ed" />
+<img width="997" height="757" alt="Screenshot 2026-01-09 155657" src="https://github.com/user-attachments/assets/638c0b37-869f-44f8-8460-e7cbe3bdb95c" />
 
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
