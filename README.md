@@ -6,7 +6,7 @@
 
 MatrixHLE is a high-level emulator for iPhone OS apps. It runs on modern desktop operating systems and Android, and is written in Rust.
 
---SoraHLE uses a high-level emulation (HLE) approach, which differs from traditional low-level emulation (LLE). Instead of simulating iPhone/iPod touch hardware directly, MatrixHLE replaces iPhone OS itself by providing its own implementations of system frameworks such as Foundation, UIKit, OpenGL ES, OpenAL, and more. The only code executed by the emulated CPU is the app binary and a small number of essential libraries.
+--MatrixHLE uses a high-level emulation (HLE) approach, which differs from traditional low-level emulation (LLE). Instead of simulating iPhone/iPod touch hardware directly, MatrixHLE replaces iPhone OS itself by providing its own implementations of system frameworks such as Foundation, UIKit, OpenGL ES, OpenAL, and more. The only code executed by the emulated CPU is the app binary and a small number of essential libraries.
 
 The primary goal of SoraHLE is to run games from the early days of iOS:
 
