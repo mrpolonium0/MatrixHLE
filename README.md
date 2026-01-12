@@ -1,12 +1,12 @@
-## SoraHLE: High-level emulator for iPhone OS apps
+## MatrixHLE: High-level emulator for iPhone OS apps
 
 <img width="997" height="757" alt="Screenshot 2026-01-09 155657" src="https://github.com/user-attachments/assets/638c0b37-869f-44f8-8460-e7cbe3bdb95c" />
 
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-SoraHLE is a high-level emulator for iPhone OS apps. It runs on modern desktop operating systems and Android, and is written in Rust.
+MatrixHLE is a high-level emulator for iPhone OS apps. It runs on modern desktop operating systems and Android, and is written in Rust.
 
---SoraHLE uses a high-level emulation (HLE) approach, which differs from traditional low-level emulation (LLE). Instead of simulating iPhone/iPod touch hardware directly, SoraHLE replaces iPhone OS itself by providing its own implementations of system frameworks such as Foundation, UIKit, OpenGL ES, OpenAL, and more. The only code executed by the emulated CPU is the app binary and a small number of essential libraries.
+--SoraHLE uses a high-level emulation (HLE) approach, which differs from traditional low-level emulation (LLE). Instead of simulating iPhone/iPod touch hardware directly, MatrixHLE replaces iPhone OS itself by providing its own implementations of system frameworks such as Foundation, UIKit, OpenGL ES, OpenAL, and more. The only code executed by the emulated CPU is the app binary and a small number of essential libraries.
 
 The primary goal of SoraHLE is to run games from the early days of iOS:
 
@@ -124,7 +124,7 @@ Licenses for dependencies, fonts, and dynamic libraries may vary.
 
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-## SoraHLE ACD (App comptibility database)
+## MatrixHLE ACD (App comptibility database)
 
 (find out what does and doesn't work!)
 
