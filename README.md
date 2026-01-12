@@ -1,137 +1,146 @@
-# touchHLE: high-level emulator for iPhone OS apps
+## SoraHLE: High-level emulator for iPhone OS apps
 
-**touchHLE** is a high-level emulator for iPhone OS apps. It runs on modern desktop operating systems and Android, and is written in Rust.
+<img width="997" height="757" alt="image" src="https://github.com/user-attachments/assets/2d02327b-acf7-4b22-bab9-ce75042d22ed" />
 
-touchHLE's high-level emulation (HLE) approach differs from low-level emulation (LLE) in that it does not directly simulate the iPhone/iPod touch hardware. Instead of running iPhone OS inside emulation, touchHLE _itself_ takes the place of iPhone OS and provides its own implementations of the system frameworks (Foundation, UIKit, OpenGL ES, OpenAL, etc). The only code the [emulated CPU](https://github.com/merryhime/dynarmic) executes is the app binary and [a handful of libraries](touchHLE_dylibs/).
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-The goal of this project is to run games from the early days of iOS:
+SoraHLE is a high-level emulator for iPhone OS apps. It runs on modern desktop operating systems and Android, and is written in Rust.
 
-* Currently: iPhone and iPod touch apps for iPhone OS 2.x and iPhone OS 3.0.
-* Longer term: iPhone OS 3.1, iPad apps (iPhone OS 3.2), iOS 4.x, …
-* [Never](https://github.com/touchHLE/touchHLE/issues/181#issuecomment-1777098259): 64-bit iOS.
+--SoraHLE uses a high-level emulation (HLE) approach, which differs from traditional low-level emulation (LLE). Instead of simulating iPhone/iPod touch hardware directly, SoraHLE replaces iPhone OS itself by providing its own implementations of system frameworks such as Foundation, UIKit, OpenGL ES, OpenAL, and more. The only code executed by the emulated CPU is the app binary and a small number of essential libraries.
 
-**This does not mean that all apps for these OS versions work.** The vast majority of iPhone OS 2.x and iPhone OS 3.x apps do not currently work in touchHLE, and the ones that do work are generally games (support for other apps isn't a priority: it's more complex and less fun). This improves gradually over time with contributions from various developers. The [touchHLE app compatibility database](https://appdb.touchhle.org/) tracks which apps work in touchHLE; it is a crowdsourced effort to which anyone can contribute. **We don't take requests, so please do not ask us to support your favourite game.**
+The primary goal of SoraHLE is to run games from the early days of iOS:
 
-If you're curious about the history and motivation behind the project, you might want to read [the original announcement](https://hikari.noyu.me/blog/2023-02-06-touchhle-anouncement-thread-tech-games-me-and-passion-projects.html). For an introduction to some of the technical details, check out [_touchHLE in depth_](https://hikari.noyu.me/blog/2023-04-13-touchhle-in-depth-1-function-calls.html).
+  * Currently supported: iPhone and iPod touch apps for iPhone OS 2.x and 3.x.
 
-**Check out the website for downloads, FAQ, social media, and more:**<br>👉 <https://touchhle.org/> 👈
+  * Future plans: Support for iPhone OS 3.1, iPad apps (iPhone OS 3.2), iOS 4.x, and others.
 
-## Important disclaimer
+  * [In the long run]: 64-bit iOS apps.
 
-This project is not affiliated with or endorsed by Apple Inc in any way. iPhone, iOS, iPod, iPod touch and iPad are trademarks of Apple Inc in the United States and other countries.
+Not all apps for these OS versions are compatible. The majority of working apps are games, as other apps are more complex to emulate and less of a focus. Compatibility improves over time through contributions from developers. A crowdsourced app compatibility database tracks which apps run in SoraHLE. Please note that the project does not accept individual app requests.
+For more information about the project’s history and technical details, you can read the original announcement or explore SoraHLE in depth.
 
-Only use touchHLE to emulate software you have obtained legally.
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 ## Platform support
 
-* Officially supported: x64 Windows, x64 macOS and AArch64 Android.
-  * These are the platforms with binary releases.
-  * If you're an Apple Silicon Mac user, the x64 build reportedly works in Rosetta.
-* Probably works, but you must build it yourself: AArch64 macOS, x64 Linux, AArch64 Linux.
-* Never?: other architectures.
+  * Officially supported: x64 Windows, x64 macOS, AArch64 Android.
 
-Input methods:
+  * On Apple Silicon Macs, the x64 build works under Rosetta.
 
-- For simulated touch input, there are four options:
-  - Mouse/trackpad input (tap/hold/drag by pressing the left mouse button)
-  - Virtual cursor using a game controller (move the cursor with the right analog stick, and tap/hold/drag by pressing the stick or the right shoulder button)
-  - Mapping of game controller buttons or the left analog stick to specific on-screen locations (see the descriptions of `--button-to-touch=`, `--dpad-to-touch=` and `--stick-to-touch=` in `OPTIONS_HELP.txt`)
-  - Real touch input, if you're on a device that has a touch screen
-- For simulated accelerometer input, there are three options:
-  - Tilt control simulation using the left analog stick of a game controller
-  - Tilt control simulation using a mouse (hold down the right mouse button)
-  - Real accelerometer input, if you are using a phone, tablet or some other device with a built-in accelerometer (TODO: support game controllers with accelerometers)
+  * Community builds: AArch64 macOS, x64 Linux, AArch64 Linux.
 
-## Development status
+  * Not supported: Other architectures.
 
-This project has been in development since December 2022. This was originally [hikari\_no\_yume](https://hikari.noyu.me/)'s full-time passion project. Since its release in February 2023, a number of other volunteers have also [contributed in their free time](https://github.com/touchHLE/touchHLE/graphs/contributors), and this is no longer a single-person project. There's only been a handful of releases so far and no promises can be made about the future. Please be patient.
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-In general, the supported functionality is defined by the supported apps: most contributors are interested in getting a particular game working, and contribute support for whichever missing features are needed for that game. Consequently, the completeness varies a lot between APIs, e.g. UIKit is easily the most hacky and incomplete of the large frameworks that have been implemented, because most games don't use very much of its functionality, whereas the OpenGL ES and OpenAL implementations are probably complete enough to cover a large number of early apps, because games make heavy use of these.
+## Input methods
 
-# Usage
+## Touch Input:
 
-First obtain touchHLE, either a [binary release](https://github.com/touchHLE/touchHLE/releases) or by building it yourself (see the next section).
+   * Mouse/trackpad (tap, hold, drag via left mouse button)
 
-You'll then need an app that you can run. The [app compatibility database](https://appdb.touchhle.org/) is a good guide for which versions of which apps are known to work, but bear in mind that it may contain outdated or inaccurate information. Note that the app binary must be decrypted to be usable.
+   * Virtual cursor using a game controller
 
-There's a few ways you can run an app in touchHLE.
+   * Game controller button mapping to screen locations
 
-## Special Android notes
+   * Real touchscreen input on compatible devices
 
-Windows, Mac and Linux users can skip this section.
+## Accelerometer input
 
-On Android, only the graphical user interface (app picker) is available. Therefore, you must put your “.ipa” files or “.app” bundles inside the “touchHLE\_apps” directory. Note that you can only do that once you have run touchHLE at least once.
+   * Tilt simulation using game controller or mouse
 
-File management can be tricky on Android due to [restrictions introduced by Google in newer Android versions](https://developer.android.com/about/versions/11/privacy/storage#scoped-storage). One of these methods may work:
+   * Real accelerometer input on phones or tablets
 
-* If you tap the “File manager” button in touchHLE, this should open some sort of file manager. You might also be able to find touchHLE in your device's file manager app (often called “Files”, or sometimes “Downloads”), alongside cloud storage services. There are some limitations on what kinds of operations are possible. The files in this location are stored on your device. Warning: on some devices, the “File manager” button _will_ open a file manager, but it will crash when actually doing file operations (this is probably a bug in Android, we have not been able to debug it). If this happens to you, clear that file manager from your recent apps list and try to navigate to your device's file manager app directly instead, rather than via the touchHLE UI.
-* If you have an older version of Android, you may be able to directly access touchHLE's files by browsing to `/sdcard/Android/data/org.touchhle.android/files/touchHLE_apps`. Note that the `/sdcard` directory is usually not on the SD card.
-* You may be able to use ADB. If you're unfamiliar with ADB, try using <https://yume-chan.github.io/ya-webadb/> (in Google Chrome or another browser with WebUSB) with your device connected over USB. touchHLE's files can be found in “sdcard” > “Android” > “data” > “org.touchhle.android” > “files” > “touchHLE\_apps”.
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-## Graphical user interface
+## Developement status
 
-touchHLE has a built-in app picker. If you put your `.ipa` files and `.app` bundles in the `touchHLE_apps` directory, they will show up in the app picker when you run touchHLE.
+SoraHLE has been in development since [insert start date]. It began as a passion project and now benefits from contributions by multiple volunteers.
 
-To configure the options, you can edit the `touchHLE_options.txt` file. To get a list of options, look in the `OPTIONS_HELP.txt` file.
 
-## Command-line user interface
+Support completeness varies depending on which apps contributors are focusing on. For instance:
 
-**This section does not apply on Android.**
+  * UIKit implementations are partial and hacky, sufficient for many early games.
 
-You can see the command-line usage by passing the `--help` flag.
+  * OpenGL ES and OpenAL implementations are more complete, as games heavily rely on these frameworks.
 
-If you're a Windows user and unfamiliar with the command line, these instructions may help you get started:
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-1. Move the `.ipa` file or `.app` bundle to the same folder as `touchHLE.exe`.
-2. Hold the Shift key and right-click on the empty space in the folder window.
-3. Click “Open with PowerShell”.
-4. Type `.\touchHLE.exe "YourAppNameHere.ipa"` (or `.app` as appropriate) and press Enter. If you want to specify options, add a space after the app name (outside the quotes) and then type the options, separated by spaces.
+## Usage
+
+ 1. Obtain SoraHLE: Use a binary release or build it yourself.
+
+ 2. Prepare an app: Only decrypted iPhone/iPod touch app binaries (IPA or .app) are usable.
+
+ 3. Run the app:
+
+     * Desktop: Drag and drop or use the command line interface.
+
+     * Android: Place app files in the SoraHLE_apps directory. Use the built-in app picker to launch apps.
 
 ## Local multiplayer support
 
-touchHLE provides limited support for local multiplayer via Wi-Fi in some games. At the moment of writing it is supported in Asphalt 4 and N.O.V.A.
+SoraHLE provides limited Wi-Fi multiplayer support for certain games.
 
-Real iOS devices could also join/host games!
+ * Install SoraHLE on multiple devices connected to the same network.
 
-**Usage:**
-1. Install touchHLE on 2+ devices connected to the same Wi-Fi network.
-2. **Important:** Ensure touchHLE is whitelisted in your OS firewall/network settings.
-3. Enable "Network access" in Quick options or via `--allow-network-access`.
-4. Start/join multiplayer in the game.
+ * Enable network access via Quick Options or --allow-network-access.
 
-**FAQs:**
-* **Tunneling over Internet/VPN:** Not officially supported, but might work.
-* **Bluetooth:** Not supported.
+ * Start/join the multiplayer session in the game.
 
-**Known issues:**
-* On macOS you may need to launch touchHLE from terminal as otherwise OS will block network connections.
+------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-## Other stuff
+## Known issues
 
-Any data saved by the app (e.g. **saved games**) are stored in the `touchHLE_sandbox` folder.
+ * Overlays like Discord, Steam, or RivaTuner may cause crashes.
 
-If the emulator crashes almost immediately while running a **known-working** version of a game, please check whether you have any overlays turned on like the Steam overlay, Discord overlay, RivaTuner Statistics Server, etc. Sadly, as useful as these tools are, they work by injecting themselves into other apps or games and don't always clean up after themselves, so they can break touchHLE… it's not our fault. 😢 Currently only RivaTuner Statistics Server is known to be a problem. If you find another overlay that doesn't work, please tell us about it.
+ * On macOS, launch from Terminal to enable network access.
 
-# Building and contributing
+ * Android file access can be tricky due to OS restrictions.
 
-See the `CONTRIBUTING.md` file in the git repo if you want to contribute. If you just want build touchHLE, look at `dev-docs/building.md`.
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-# License
+## File storage
 
-touchHLE © 2023–2026 touchHLE project contributors.
+All app data (e.g., saved games) is stored in the SoraHLE_sandbox folder.
 
-The source code of touchHLE itself (not its dependencies) is licensed under the Mozilla Public License, version 2.0.
+----------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-Due to license compatibility concerns, binaries are under the GNU General Public License version 3 or later.
+## Building and contributing
 
-For a best effort listing of all licenses of dependencies, build touchHLE and pass the `--copyright` flag when running it, or click the “Copyright info” button in the app picker.
+See CONTRIBUTING.md for how to contribute, and dev-docs/building.md for instructions on building SoraHLE yourself.
 
-Please note that different licensing terms apply to the bundled dynamic libraries (in `touchHLE_dylibs/`) and fonts (in `touchHLE_fonts/`). Please consult the respective directories for more information.
+----------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-# Thanks
+## License
 
-We stand on the shoulders of giants. Thank you to:
+SoraHLE © 2023–2026 SoraHLE project contributors.
 
+Source code: Mozilla Public License 2.0
+
+Binaries: GNU GPL v3 or later
+
+Licenses for dependencies, fonts, and dynamic libraries may vary.
+
+---------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+## SoraHLE ACD (App comptibility database)
+
+(find out what does and doesn't work!)
+
+
+ * If you are interested to see wich apps are compatible with SoraHLE, feel free to check out our GitHub page right here:
+
+   --https://github.com/mrpolonium0/SoraHLE-App-comptibility-database-/tree/main
+
+---------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+## Acknowledgments
+
+SoraHLE stands on the shoulders of giants. Thanks to:
+
+
+* The entire team behind [touchHLE]: @Ciciplusplus, @hikari-no-yume, @apexad and so much more...
 * Everyone who has contributed to the project or supported any of its contributors financially.
 * The authors of and contributors to the many libraries used by this project: [dynarmic](https://github.com/merryhime/dynarmic), [rust-macho](https://github.com/flier/rust-macho), [SDL](https://libsdl.org/), [rust-sdl2](https://github.com/Rust-SDL2/rust-sdl2), [stb\_image](https://github.com/nothings/stb), Imagination Technologies' [PVRTC decompressor](https://github.com/powervr-graphics/Native_SDK/blob/master/framework/PVRCore/texture/PVRTDecompress.cpp), [openal-soft](https://github.com/kcat/openal-soft), [hound](https://github.com/ruuda/hound), [caf](https://github.com/rustaudio/caf), [Symphonia](https://github.com/pdeljanov/Symphonia), [RustType](https://gitlab.redox-os.org/redox-os/rusttype), [the Liberation fonts](https://github.com/liberationfonts/liberation-fonts), [the Noto CJK fonts](https://github.com/googlefonts/noto-cjk), [rust-plist](https://github.com/ebarnard/rust-plist), [quick-xml](https://github.com/tafia/quick-xml), [gl-rs](https://github.com/brendanzab/gl-rs), [cargo-license](https://github.com/onur/cargo-license), [cc-rs](https://github.com/rust-lang/cc-rs), [cmake-rs](https://github.com/rust-lang/cmake-rs), [cargo-ndk](https://github.com/bbqsrc/cargo-ndk), [cargo-ndk-android-gradle](https://github.com/willir/cargo-ndk-android-gradle), [md5](https://github.com/stainless-steel/md5), [yore](https://github.com/bonega/yore), [encoding_rs](https://github.com/hsivonen/encoding_rs), and the Rust standard library.
 * The Skyline emulator project (RIP), for [writing the tedious boilerplate needed to replace file management on newer Android versions](https://github.com/skyline-emu/skyline/blob/dc20a615275f66bee20a4fd851ef0231daca4f14/app/src/main/java/emu/skyline/provider/DocumentsProvider.kt).
