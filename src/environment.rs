@@ -25,9 +25,10 @@ use std::cell::Cell;
 use std::collections::{HashMap, VecDeque};
 use std::net::TcpListener;
 use std::rc::Rc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use crate::libc::pthread::cond::pthread_cond_t;
+use crate::libc::stdio::FILE;
 use crate::window::DeviceFamily;
 use corosensei::{Coroutine, Yielder};
 pub use mutex::{MutexId, MutexType, PTHREAD_MUTEX_DEFAULT};
@@ -141,7 +142,7 @@ pub enum ThreadBlock {
     // Thread is waiting on a semaphore.
     Semaphore(MutPtr<sem_t>),
     // Thread is waiting on a condition variable
-    Condition(MutPtr<pthread_cond_t>),
+    Condition(MutPtr<pthread_cond_t>, Option<Duration>),
     // Thread is waiting for another thread to finish (joining).
     Joining(ThreadId, MutPtr<MutVoidPtr>),
     // Thread has hit a cpu error, and is waiting to be debugged.
@@ -150,6 +151,8 @@ pub enum ThreadBlock {
     // (boxed to avoid cyclic dependency), which would be restored upon
     // resuming.
     Suspended(usize, Box<ThreadBlock>),
+    // Thread is waiting on a FILE object lock.
+    FileObjectLock(MutPtr<FILE>),
 }
 
 struct BinaryDependencyNode {
@@ -838,7 +841,11 @@ impl Environment {
         self.cpu.dump_regs();
         for (tid, thread) in self.threads.iter().enumerate() {
             if thread.active && tid != self.current_thread {
-                echo_no_panic!("Dumping registers for thread #{}", tid);
+                echo_no_panic!(
+                    "Dumping registers for thread #{} (blocked by {:?})",
+                    tid,
+                    thread.blocked_by
+                );
                 let Some(ctx) = thread.guest_context.as_ref() else {
                     echo_no_panic!("Could not get registers for thread {}!", tid);
                     return;
@@ -1507,6 +1514,13 @@ impl Environment {
                             svc,
                         ) {
                             f.call_from_guest(self);
+                            if let Some(len) = self.options.zero_stack_after_guest_to_host_call {
+                                log_once!("Applying zeroing of stack after guest to host call.");
+                                let start = self.cpu.regs()[cpu::Cpu::SP] - len;
+                                self.mem
+                                    .bytes_at_mut(mem::Ptr::from_bits(start), len)
+                                    .fill(0);
+                            }
                             // On entry_size 4 return here since there's
                             // no space to add a ret after the svc call
                             if svc & dyld::Dyld::SVC_LAZY_LINK_RET_FLAG != 0 {
@@ -1658,7 +1672,7 @@ impl Environment {
                             return thread_id;
                         }
                     }
-                    ThreadBlock::Condition(cond) => {
+                    ThreadBlock::Condition(cond, deadline) => {
                         let host_cond = self
                             .libc_state
                             .pthread
@@ -1678,6 +1692,27 @@ impl Environment {
                             self.threads[thread_id].blocked_by = ThreadBlock::NotBlocked;
                             self.relock_unblocked_mutex_for_thread(thread_id, mutex);
                             return thread_id;
+                        } else if let Some(deadline) = deadline {
+                            let time = SystemTime::now()
+                                .duration_since(SystemTime::UNIX_EPOCH)
+                                .unwrap();
+                            if deadline <= time {
+                                log_dbg!(
+                                    "Thread {} is timed out on cond var {:?}.",
+                                    thread_id,
+                                    cond
+                                );
+                                assert!(!host_cond.timed_out.contains(&thread_id));
+                                host_cond.timed_out.insert(thread_id);
+
+                                assert!(host_cond.waking.is_empty());
+                                host_cond.waiting.retain(|&t| t != thread_id);
+
+                                assert!(!self.mutex_state.mutex_is_locked(mutex));
+                                self.threads[thread_id].blocked_by = ThreadBlock::NotBlocked;
+                                self.relock_unblocked_mutex_for_thread(thread_id, mutex);
+                                return thread_id;
+                            }
                         }
                     }
                     ThreadBlock::Joining(joinee_thread, ptr) => {
@@ -1704,6 +1739,18 @@ impl Environment {
                     ThreadBlock::Suspended(cnt, _) => {
                         assert!(cnt > 0);
                     }
+                    ThreadBlock::FileObjectLock(file_ptr) => {
+                        // TODO: fairness
+                        let acquired = self.libc_state.stdio.try_acquire_file_object_lock(
+                            &mut self.mem,
+                            file_ptr,
+                            thread_id,
+                        );
+                        if acquired {
+                            self.threads[thread_id].blocked_by = ThreadBlock::NotBlocked;
+                            return thread_id;
+                        }
+                    }
                 }
             }
 
@@ -1720,6 +1767,7 @@ impl Environment {
                 // This should hopefully not happen, but if a thread is
                 // blocked on another thread waiting for a deferred return,
                 // it could.
+                // TODO: handle a thread waiting on condition with a timeout
                 panic!("No active threads, program has deadlocked!");
             }
         }

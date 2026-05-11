@@ -5,6 +5,7 @@
  */
 //! The Core Audio Types framework. (Yes, it's not part of Core Audio?)
 
+use crate::audio::{AudioDescription, AudioFormat};
 use crate::mem::SafeRead;
 
 // The audio frameworks love FourCC's, and we currently don't need these
@@ -78,6 +79,70 @@ impl std::fmt::Debug for AudioStreamBasicDescription {
             .finish()
     }
 }
+impl AudioStreamBasicDescription {
+    pub fn from_audio_description(desc: AudioDescription) -> AudioStreamBasicDescription {
+        let AudioDescription {
+            sample_rate,
+            format,
+            bytes_per_packet,
+            frames_per_packet,
+            channels_per_frame,
+            bits_per_channel,
+        } = desc;
+
+        match format {
+            AudioFormat::LinearPcm {
+                is_float,
+                is_little_endian,
+            } => {
+                let is_packed = (bits_per_channel * channels_per_frame * frames_per_packet)
+                    == (bytes_per_packet * 8);
+                let format_flags = (u32::from(is_float) * kAudioFormatFlagIsFloat)
+                    | (u32::from((!is_float) && matches!(bits_per_channel, 16 | 24))
+                        * kAudioFormatFlagIsSignedInteger)
+                    | (u32::from(is_packed) * kAudioFormatFlagIsPacked)
+                    | (u32::from(!is_little_endian) * kAudioFormatFlagIsBigEndian);
+                AudioStreamBasicDescription {
+                    sample_rate,
+                    format_id: kAudioFormatLinearPCM,
+                    format_flags,
+                    bytes_per_packet,
+                    frames_per_packet,
+                    bytes_per_frame: bytes_per_packet / frames_per_packet,
+                    channels_per_frame,
+                    bits_per_channel,
+                    _reserved: 0,
+                }
+            }
+        }
+    }
+}
+
+#[repr(C, packed)]
+pub struct SMPTETime {
+    pub subframes: i16,
+    pub subframe_divisor: i16,
+    pub counter: u32,
+    pub type_: u32,
+    pub flags: u32,
+    pub hours: i16,
+    pub minutes: i16,
+    pub seconds: i16,
+    pub frames: i16,
+}
+unsafe impl SafeRead for SMPTETime {}
+
+#[repr(C, packed)]
+pub struct AudioTimeStamp {
+    pub sample_time: f64,
+    pub host_time: u64,
+    pub rate_scalar: f64,
+    pub world_clock_type: u64,
+    pub SMPTE_time: SMPTETime,
+    pub flags: u32,
+    pub _reserved: u32,
+}
+unsafe impl SafeRead for AudioTimeStamp {}
 
 /// Usually a FourCC.
 pub type AudioFormatID = u32;

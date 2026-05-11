@@ -10,11 +10,7 @@ use crate::audio; // Keep this module namespaced to avoid confusion
 use crate::audio::AudioDescription;
 use crate::dyld::{export_c_func, FunctionExports};
 use crate::frameworks::carbon_core::{eofErr, OSStatus};
-use crate::frameworks::core_audio_types::{
-    debug_fourcc, fourcc, kAudioFormatAppleIMA4, kAudioFormatFlagIsBigEndian,
-    kAudioFormatFlagIsFloat, kAudioFormatFlagIsPacked, kAudioFormatFlagIsSignedInteger,
-    kAudioFormatLinearPCM, AudioStreamBasicDescription,
-};
+use crate::frameworks::core_audio_types::{debug_fourcc, fourcc, AudioStreamBasicDescription};
 use crate::frameworks::core_foundation::cf_url::CFURLRef;
 use crate::frameworks::foundation::ns_url::to_rust_path;
 use crate::mem::{guest_size_of, GuestUSize, MutPtr, MutVoidPtr, SafeRead};
@@ -43,10 +39,18 @@ unsafe impl SafeRead for OpaqueAudioFileID {}
 
 pub type AudioFileID = MutPtr<OpaqueAudioFileID>;
 
+#[repr(C, packed)]
+struct AudioFilePacketTableInfo {
+    number_valid_frames: i64,
+    priming_frames: i32,
+    remainder_frames: i32,
+}
+unsafe impl SafeRead for AudioFilePacketTableInfo {}
+
 #[allow(dead_code)]
 const kAudioFileFileNotFoundError: OSStatus = -43;
-const kAudioFileBadPropertySizeError: OSStatus = fourcc(b"!siz") as _;
-const kAudioFileUnsupportedProperty: OSStatus = fourcc(b"pty?") as _;
+pub const kAudioFileBadPropertySizeError: OSStatus = fourcc(b"!siz") as _;
+const kAudioFileUnsupportedPropertyError: OSStatus = fourcc(b"pty?") as _;
 const kAudioFileUnsupportedFileTypeError: OSStatus = fourcc(b"typ?") as _;
 const kAudioFileUnspecifiedError: OSStatus = fourcc(b"wht?") as _;
 
@@ -66,6 +70,7 @@ pub const kAudioFilePropertyPacketSizeUpperBound: AudioFilePropertyID = fourcc(b
 const kAudioFilePropertyMagicCookieData: AudioFilePropertyID = fourcc(b"mgic");
 const kAudioFilePropertyChannelLayout: AudioFilePropertyID = fourcc(b"cmap");
 const kAudioFilePropertyEstimatedDuration: AudioFilePropertyID = fourcc(b"edur");
+const kAudioFilePropertyPacketTableInfo: AudioFilePropertyID = fourcc(b"pnfo");
 
 pub fn AudioFileOpenURL(
     env: &mut Environment,
@@ -219,13 +224,14 @@ pub fn AudioFileOpenWithCallbacks(
     0 // success
 }
 
-fn property_size(property_id: AudioFilePropertyID) -> GuestUSize {
+pub(super) fn property_size(property_id: AudioFilePropertyID) -> GuestUSize {
     match property_id {
         kAudioFilePropertyDataFormat => guest_size_of::<AudioStreamBasicDescription>(),
         kAudioFilePropertyAudioDataByteCount => guest_size_of::<u64>(),
         kAudioFilePropertyAudioDataPacketCount => guest_size_of::<u64>(),
         kAudioFilePropertyPacketSizeUpperBound => guest_size_of::<u32>(),
         kAudioFilePropertyEstimatedDuration => guest_size_of::<f64>(),
+        kAudioFilePropertyPacketTableInfo => guest_size_of::<AudioFilePacketTableInfo>(),
         _ => unimplemented!("Unimplemented property ID: {}", debug_fourcc(property_id)),
     }
 }
@@ -251,7 +257,7 @@ fn AudioFileGetPropertyInfo(
         if !is_writable.is_null() {
             env.mem.write(is_writable, 0);
         }
-        return kAudioFileUnsupportedProperty;
+        return kAudioFileUnsupportedPropertyError;
     }
     if !out_data_size.is_null() {
         env.mem.write(out_data_size, property_size(in_property_id));
@@ -284,53 +290,9 @@ pub fn AudioFileGetProperty(
 
     match in_property_id {
         kAudioFilePropertyDataFormat => {
-            let audio::AudioDescription {
-                sample_rate,
-                format,
-                bytes_per_packet,
-                frames_per_packet,
-                channels_per_frame,
-                bits_per_channel,
-            } = host_object.audio_file.audio_description();
-
-            let desc: AudioStreamBasicDescription = match format {
-                audio::AudioFormat::LinearPcm {
-                    is_float,
-                    is_little_endian,
-                } => {
-                    let is_packed = (bits_per_channel * channels_per_frame * frames_per_packet)
-                        == (bytes_per_packet * 8);
-                    let format_flags = (u32::from(is_float) * kAudioFormatFlagIsFloat)
-                        | (u32::from((!is_float) && matches!(bits_per_channel, 16 | 24))
-                            * kAudioFormatFlagIsSignedInteger)
-                        | (u32::from(is_packed) * kAudioFormatFlagIsPacked)
-                        | (u32::from(!is_little_endian) * kAudioFormatFlagIsBigEndian);
-                    AudioStreamBasicDescription {
-                        sample_rate,
-                        format_id: kAudioFormatLinearPCM,
-                        format_flags,
-                        bytes_per_packet,
-                        frames_per_packet,
-                        bytes_per_frame: bytes_per_packet / frames_per_packet,
-                        channels_per_frame,
-                        bits_per_channel,
-                        _reserved: 0,
-                    }
-                }
-                audio::AudioFormat::AppleIma4 => {
-                    AudioStreamBasicDescription {
-                        sample_rate,
-                        format_id: kAudioFormatAppleIMA4,
-                        format_flags: 0,
-                        bytes_per_packet,
-                        frames_per_packet,
-                        bytes_per_frame: 0, // compressed
-                        channels_per_frame,
-                        bits_per_channel,
-                        _reserved: 0,
-                    }
-                }
-            };
+            let desc = AudioStreamBasicDescription::from_audio_description(
+                host_object.audio_file.audio_description(),
+            );
             env.mem.write(out_property_data.cast(), desc);
         }
         kAudioFilePropertyAudioDataByteCount => {
@@ -359,13 +321,17 @@ pub fn AudioFileGetProperty(
                 / (bytes_per_packet as f64 * sample_rate);
             env.mem.write(out_property_data.cast(), estimated_duration);
         }
+        kAudioFilePropertyPacketTableInfo => {
+            log!("TODO: AudioFileGetProperty({:?}, kAudioFilePropertyPacketTableInfo, {:?}, {:?}) -> kAudioFileUnsupportedPropertyError", in_audio_file, io_data_size, out_property_data);
+            return kAudioFileUnsupportedPropertyError;
+        }
         _ => unreachable!(),
     }
 
     0 // success
 }
 
-fn AudioFileReadBytes(
+pub fn AudioFileReadBytes(
     env: &mut Environment,
     in_audio_file: AudioFileID,
     _in_use_cache: bool,

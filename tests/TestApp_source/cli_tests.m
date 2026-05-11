@@ -30,6 +30,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
@@ -49,6 +50,7 @@ extern kern_return_t thread_info(mach_port_t target_act, natural_t flavor,
 int test_AutoreleasePool(void);    // AutoReleasePoolTest.m
 int test_CGAffineTransform(void);  // CGAffineTransform.c
 int test_RespondsToSelector(void); // RespondsToSelector.m
+int test_Initialize(void);         // Initialize.m
 
 #ifndef DEFINE_ME_WHEN_BUILDING_ON_MACOS
 int test_cpp_virtual_inheritance(void); // CppVirtualInheritance.cpp
@@ -528,6 +530,41 @@ int test_vsnprintf() {
     return -52;
   }
   free(str);
+  // Test %ls (wide string, C locale)
+  str = str_format("%ls", L"hello");
+  if (strcmp(str, "hello") != 0) {
+    free(str);
+    return -53;
+  }
+  free(str);
+  // Test %ls with ASCII-only wide string
+  str = str_format("%ls", L"foo bar");
+  if (strcmp(str, "foo bar") != 0) {
+    free(str);
+    return -54;
+  }
+  free(str);
+  // Test %ls with empty wide string
+  str = str_format("%ls", L"");
+  if (strcmp(str, "") != 0) {
+    free(str);
+    return -55;
+  }
+  free(str);
+  // Test %ls NULL
+  str = str_format("%ls", (wchar_t *)NULL);
+  if (strcmp(str, "(null)") != 0) {
+    free(str);
+    return -56;
+  }
+  free(str);
+  // Test %ls embedded in a larger format string
+  str = str_format("pre-%ls-post", L"mid");
+  if (strcmp(str, "pre-mid-post") != 0) {
+    free(str);
+    return -57;
+  }
+  free(str);
 
   return 0;
 }
@@ -537,7 +574,7 @@ int test_sscanf() {
   short c, d;
   float f;
   double lf;
-  char str[256], str1[4];
+  char str[256], str1[16];
   int matched = sscanf("1.23", "%d.%d", &a, &b);
   if (!(matched == 2 && a == 1 && b == 23))
     return -1;
@@ -629,6 +666,89 @@ int test_sscanf() {
   if (!(matched == 8 && strcmp(str, "\"origin\"") == 0 && a == -1 && f1 == 0 &&
         fabs(f4 + 0.7071067095) < 1e-10 && f6 == 0))
     return -30;
+  // '%g' test cases
+  matched = sscanf("123", "%g", &f);
+  if (!(matched == 1 && f == 123.0f))
+    return -31;
+  matched = sscanf("1.23", "%g", &f);
+  if (!(matched == 1 && fabs(f - 1.23f) < 1e-5f))
+    return -32;
+  matched = sscanf("1.23e-4", "%g", &f);
+  if (!(matched == 1 && fabs(f - 1.23e-4f) < 1e-8f))
+    return -33;
+  matched = sscanf("1.23E4", "%g", &f);
+  if (!(matched == 1 && fabs(f - 12300.0f) < 1e-5f))
+    return -34;
+  matched = sscanf("+1.23", "%g", &f);
+  if (!(matched == 1 && fabs(f - 1.23f) < 1e-5f))
+    return -35;
+  matched = sscanf("-1.23", "%g", &f);
+  if (!(matched == 1 && fabs(f - -1.23f) < 1e-5f))
+    return -36;
+  matched = sscanf(".5", "%g", &f);
+  if (!(matched == 1 && fabs(f - 0.5f) < 1e-5f))
+    return -37;
+  matched = sscanf("-.5", "%g", &f);
+  if (!(matched == 1 && fabs(f - -0.5f) < 1e-5f))
+    return -38;
+  matched = sscanf("1e5", "%g", &f);
+  if (!(matched == 1 && fabs(f - 100000.0f) < 1e-5f))
+    return -39;
+  matched = sscanf("1.e5", "%g", &f);
+  if (!(matched == 1 && fabs(f - 100000.0f) < 1e-5f))
+    return -40;
+  matched = sscanf("  1.23", "%g", &f);
+  if (!(matched == 1 && fabs(f - 1.23f) < 1e-5f))
+    return -41;
+  matched = sscanf("+1.23e+4", "%g", &f);
+  if (!(matched == 1 && fabs(f - 12300.0f) < 1e-5f))
+    return -42;
+  matched = sscanf("-1.23e-4", "%g", &f);
+  if (!(matched == 1 && fabs(f - -0.000123f) < 1e-8f))
+    return -43;
+  matched = sscanf("123.", "%g", &f);
+  if (!(matched == 1 && f == 123.0f))
+    return -44;
+  // max_width for %[ specifier
+  matched = sscanf("hello", "%3[a-z]", str);
+  if (!(matched == 1 && strcmp(str, "hel") == 0))
+    return -45;
+  matched = sscanf("abcXYZ", "%3[a-z]%3[A-Z]", str, str1);
+  if (!(matched == 2 && strcmp(str, "abc") == 0 && strcmp(str1, "XYZ") == 0))
+    return -46;
+  matched = sscanf("abc,def", "%3[^,],%3[^,]", str, str1);
+  if (!(matched == 2 && strcmp(str, "abc") == 0 && strcmp(str1, "def") == 0))
+    return -47;
+  matched = sscanf("abcdef", "%3[a-z]", str);
+  if (!(matched == 1 && strcmp(str, "abc") == 0))
+    return -48;
+  matched = sscanf("ab", "%5[a-z]", str);
+  if (!(matched == 1 && strcmp(str, "ab") == 0))
+    return -49;
+  // width of 1
+  matched = sscanf("abc", "%1[a-z]", str);
+  if (!(matched == 1 && strcmp(str, "a") == 0))
+    return -50;
+  // negated set stopped by width, not by excluded char
+  matched = sscanf("abcde", "%3[^X]", str);
+  if (!(matched == 1 && strcmp(str, "abc") == 0))
+    return -51;
+  // negated set stopped by excluded char before width is reached
+  matched = sscanf("abXde", "%5[^X]", str);
+  if (!(matched == 1 && strcmp(str, "ab") == 0))
+    return -52;
+  // input length exactly equals width
+  matched = sscanf("abc", "%3[a-z]", str);
+  if (!(matched == 1 && strcmp(str, "abc") == 0))
+    return -53;
+  // width limits %[ leaving remainder for next conversion
+  matched = sscanf("abcdef", "%3[a-z]%s", str, str1);
+  if (!(matched == 2 && strcmp(str, "abc") == 0 && strcmp(str1, "def") == 0))
+    return -54;
+  // first char not in set with width: no match
+  matched = sscanf("123", "%3[a-z]", str);
+  if (matched != 0)
+    return -55;
   return 0;
 }
 
@@ -1115,7 +1235,7 @@ int test_thread_suspend_resume() {
   if (thr_info.run_state != TH_STATE_WAITING)
     return -6;
 
-  // Post the semaphore while the thread is suspended — it should not wake up.
+  // Post the semaphore while the thread is suspended - it should not wake up.
   sem_post(thread_suspend_semaphore);
   sched_yield();
 
@@ -1279,6 +1399,271 @@ int test_cond_var_static() {
 
   return 0;
 }
+
+// === pthread_cond_timedwait tests ===
+
+struct timedwait_signaler_args {
+  pthread_mutex_t *mu;
+  pthread_cond_t *cv;
+};
+
+void *timedwait_signaler(void *arg) {
+  struct timedwait_signaler_args *a = arg;
+  usleep(20000); // 20ms - well before the 500ms deadline
+  pthread_mutex_lock(a->mu);
+  pthread_cond_signal(a->cv);
+  pthread_mutex_unlock(a->mu);
+  return NULL;
+}
+
+// Test : signal arrives before deadline - should return 0, not ETIMEDOUT
+int test_cond_timedwait_signaled_before_timeout() {
+  pthread_mutex_t mu;
+  pthread_cond_t cv;
+  if (pthread_mutex_init(&mu, NULL) != 0)
+    return -1;
+  if (pthread_cond_init(&cv, NULL) != 0)
+    return -2;
+
+  struct timedwait_signaler_args args = {&mu, &cv};
+  pthread_t p;
+  if (pthread_create(&p, NULL, timedwait_signaler, &args) != 0)
+    return -3;
+
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  // Generous 500ms deadline
+  struct timespec ts = {.tv_sec = tv.tv_sec,
+                        .tv_nsec = tv.tv_usec * 1000 + 500000000};
+  if (ts.tv_nsec >= 1000000000) {
+    ts.tv_sec += 1;
+    ts.tv_nsec -= 1000000000;
+  }
+
+  pthread_mutex_lock(&mu);
+  int result = pthread_cond_timedwait(&cv, &mu, &ts);
+  pthread_mutex_unlock(&mu);
+
+  pthread_join(p, NULL);
+  pthread_cond_destroy(&cv);
+  pthread_mutex_destroy(&mu);
+
+  if (result != 0)
+    return -4;
+  return 0;
+}
+
+// Test : deadline already in the past - should return ETIMEDOUT immediately
+int test_cond_timedwait_past_deadline() {
+  pthread_mutex_t mu;
+  pthread_cond_t cv;
+  if (pthread_mutex_init(&mu, NULL) != 0)
+    return -1;
+  if (pthread_cond_init(&cv, NULL) != 0)
+    return -2;
+
+  // Use a timestamp far in the past
+  struct timespec ts = {.tv_sec = 1, .tv_nsec = 0};
+
+  pthread_mutex_lock(&mu);
+  int result = pthread_cond_timedwait(&cv, &mu, &ts);
+  pthread_mutex_unlock(&mu);
+
+  pthread_cond_destroy(&cv);
+  pthread_mutex_destroy(&mu);
+
+  if (result != ETIMEDOUT)
+    return -3;
+  return 0;
+}
+
+struct timedwait_broadcast_args {
+  pthread_mutex_t *mu;
+  pthread_cond_t *cv;
+  int ready;
+};
+
+void *timedwait_broadcast_waiter(void *arg) {
+  struct timedwait_broadcast_args *a = arg;
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  struct timespec ts = {.tv_sec = tv.tv_sec,
+                        .tv_nsec = tv.tv_usec * 1000 + 500000000};
+  if (ts.tv_nsec >= 1000000000) {
+    ts.tv_sec += 1;
+    ts.tv_nsec -= 1000000000;
+  }
+  pthread_mutex_lock(a->mu);
+  while (a->ready == 0)
+    pthread_cond_timedwait(a->cv, a->mu, &ts);
+  pthread_mutex_unlock(a->mu);
+  return NULL;
+}
+
+// Test: broadcast wakes all timedwait threads
+int test_cond_timedwait_broadcast() {
+  pthread_mutex_t mu;
+  pthread_cond_t cv;
+  if (pthread_mutex_init(&mu, NULL) != 0)
+    return -1;
+  if (pthread_cond_init(&cv, NULL) != 0)
+    return -2;
+
+  struct timedwait_broadcast_args args = {&mu, &cv, 0};
+  pthread_t p1, p2, p3;
+  if (pthread_create(&p1, NULL, timedwait_broadcast_waiter, &args) != 0)
+    return -3;
+  if (pthread_create(&p2, NULL, timedwait_broadcast_waiter, &args) != 0)
+    return -4;
+  if (pthread_create(&p3, NULL, timedwait_broadcast_waiter, &args) != 0)
+    return -5;
+
+  usleep(50000); // let all three threads reach their waits
+  pthread_mutex_lock(&mu);
+  args.ready = 1;
+  int result = pthread_cond_broadcast(&cv);
+  pthread_mutex_unlock(&mu);
+
+  if (result != 0)
+    return -6;
+
+  pthread_join(p1, NULL);
+  pthread_join(p2, NULL);
+  pthread_join(p3, NULL);
+
+  pthread_cond_destroy(&cv);
+  pthread_mutex_destroy(&mu);
+  return 0;
+}
+
+// Test: timed-out state on a cond must not persist across calls. After one
+// thread times out, a later signaled timedwait on the same cond must
+// return 0, not ETIMEDOUT.
+int test_cond_timedwait_flag_not_sticky() {
+  pthread_mutex_t mu;
+  pthread_cond_t cv;
+  if (pthread_mutex_init(&mu, NULL) != 0)
+    return -1;
+  if (pthread_cond_init(&cv, NULL) != 0)
+    return -2;
+
+  // First call: force an immediate timeout.
+  struct timespec past = {.tv_sec = 1, .tv_nsec = 0};
+  pthread_mutex_lock(&mu);
+  int first = pthread_cond_timedwait(&cv, &mu, &past);
+  pthread_mutex_unlock(&mu);
+  if (first != ETIMEDOUT)
+    return -3;
+
+  // Second call on the same cond: should be signaled and return 0.
+  struct timedwait_signaler_args args = {&mu, &cv};
+  pthread_t p;
+  if (pthread_create(&p, NULL, timedwait_signaler, &args) != 0)
+    return -4;
+
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  struct timespec ts = {.tv_sec = tv.tv_sec,
+                        .tv_nsec = tv.tv_usec * 1000 + 500000000};
+  if (ts.tv_nsec >= 1000000000) {
+    ts.tv_sec += 1;
+    ts.tv_nsec -= 1000000000;
+  }
+
+  pthread_mutex_lock(&mu);
+  int second = pthread_cond_timedwait(&cv, &mu, &ts);
+  pthread_mutex_unlock(&mu);
+
+  pthread_join(p, NULL);
+  pthread_cond_destroy(&cv);
+  pthread_mutex_destroy(&mu);
+
+  if (second != 0)
+    return -5;
+  return 0;
+}
+
+struct timedwait_sibling_args {
+  pthread_mutex_t *mu;
+  pthread_cond_t *cv;
+  long sec_offset;
+  long ns_offset; // must be < 1000000000
+  int result;
+};
+
+void *timedwait_sibling_sleeper(void *arg) {
+  (void)arg;
+  usleep(200000);
+  return NULL;
+}
+
+void *timedwait_sibling_waiter(void *arg) {
+  struct timedwait_sibling_args *a = arg;
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  struct timespec ts = {.tv_sec = tv.tv_sec + a->sec_offset,
+                        .tv_nsec = tv.tv_usec * 1000 + a->ns_offset};
+  if (ts.tv_nsec >= 1000000000) {
+    ts.tv_sec += 1;
+    ts.tv_nsec -= 1000000000;
+  }
+  pthread_mutex_lock(a->mu);
+  a->result = pthread_cond_timedwait(a->cv, a->mu, &ts);
+  pthread_mutex_unlock(a->mu);
+  return NULL;
+}
+
+// Test: when one waiter times out, other waiters on the same cond must
+// still be reachable by a later signal - i.e. a timeout on one thread
+// must not drop sibling waiters from the queue.
+int test_cond_timedwait_sibling_not_dropped() {
+  pthread_mutex_t mu;
+  pthread_cond_t cv;
+  if (pthread_mutex_init(&mu, NULL) != 0)
+    return -1;
+  if (pthread_cond_init(&cv, NULL) != 0)
+    return -2;
+
+  struct timedwait_sibling_args long_args = {&mu, &cv, 3, 0, -999};
+  struct timedwait_sibling_args short_args = {&mu, &cv, 0, 100000000, -999};
+  pthread_t p_long, p_short, p_sleeper;
+  if (pthread_create(&p_long, NULL, timedwait_sibling_waiter, &long_args) != 0)
+    return -3;
+  usleep(20000); // let the long-deadline waiter enter the wait first
+  if (pthread_create(&p_short, NULL, timedwait_sibling_waiter, &short_args) !=
+      0)
+    return -4;
+  // A thread unrelated to the cond var - keeps the scheduler ticking while
+  // the waiters are blocked on Condition, and verifies that sibling fallout
+  // from the timeout doesn't leak to unrelated threads.
+  if (pthread_create(&p_sleeper, NULL, timedwait_sibling_sleeper, NULL) != 0)
+    return -8;
+
+  // Join the short waiter first. This forces the scheduler to actually
+  // process short's timeout before we signal, so the bug path (which
+  // clears the entire waiting queue on timeout) has a chance to fire.
+  pthread_join(p_short, NULL);
+  if (short_args.result != ETIMEDOUT)
+    return -5;
+
+  // Now signal. The long waiter must still be reachable.
+  pthread_mutex_lock(&mu);
+  int res = pthread_cond_signal(&cv);
+  pthread_mutex_unlock(&mu);
+  if (res != 0)
+    return -6;
+
+  pthread_join(p_long, NULL);
+  pthread_join(p_sleeper, NULL);
+  pthread_cond_destroy(&cv);
+  pthread_mutex_destroy(&mu);
+
+  if (long_args.result != 0)
+    return -7;
+  return 0;
+}
+
+// === end pthread_cond_timedwait tests ===
 
 pthread_mutex_t normal_mutex;
 int normal_unlock_res = -1;
@@ -1887,6 +2272,77 @@ int test_fscanf_new() {
   if (!(matched == 8 && strcmp(str, "\"origin\"") == 0 && a == -1 &&
         f1 == 0.0f && fabs(f4 + 0.7071067095f) < 1e-10f && f6 == 0.0f))
     return -30;
+  SKIP_LINE(file);
+
+  // '%g' test cases
+  matched = fscanf(file, "%g", &f);
+  if (!(matched == 1 && f == 123.0f))
+    return -31;
+  SKIP_LINE(file);
+
+  matched = fscanf(file, "%g", &f);
+  if (!(matched == 1 && fabs(f - 1.23f) < 1e-5f))
+    return -32;
+  SKIP_LINE(file);
+
+  matched = fscanf(file, "%g", &f);
+  if (!(matched == 1 && fabs(f - 1.23e-4f) < 1e-8f))
+    return -33;
+  SKIP_LINE(file);
+
+  matched = fscanf(file, "%g", &f);
+  if (!(matched == 1 && fabs(f - 12300.0f) < 1e-5f))
+    return -34;
+  SKIP_LINE(file);
+
+  matched = fscanf(file, "%g", &f);
+  if (!(matched == 1 && fabs(f - 1.23f) < 1e-5f))
+    return -35;
+  SKIP_LINE(file);
+
+  matched = fscanf(file, "%g", &f);
+  if (!(matched == 1 && fabs(f - -1.23f) < 1e-5f))
+    return -36;
+  SKIP_LINE(file);
+
+  matched = fscanf(file, "%g", &f);
+  if (!(matched == 1 && fabs(f - 0.5f) < 1e-5f))
+    return -37;
+  SKIP_LINE(file);
+
+  matched = fscanf(file, "%g", &f);
+  if (!(matched == 1 && fabs(f - -0.5f) < 1e-5f))
+    return -38;
+  SKIP_LINE(file);
+
+  matched = fscanf(file, "%g", &f);
+  if (!(matched == 1 && fabs(f - 100000.0f) < 1e-5f))
+    return -39;
+  SKIP_LINE(file);
+
+  matched = fscanf(file, "%g", &f);
+  if (!(matched == 1 && fabs(f - 100000.0f) < 1e-5f))
+    return -40;
+  SKIP_LINE(file);
+
+  matched = fscanf(file, "%g", &f);
+  if (!(matched == 1 && fabs(f - 1.23f) < 1e-5f))
+    return -41;
+  SKIP_LINE(file);
+
+  matched = fscanf(file, "%g", &f);
+  if (!(matched == 1 && fabs(f - 12300.0f) < 1e-5f))
+    return -42;
+  SKIP_LINE(file);
+
+  matched = fscanf(file, "%g", &f);
+  if (!(matched == 1 && fabs(f - -0.000123f) < 1e-8f))
+    return -43;
+  SKIP_LINE(file);
+
+  matched = fscanf(file, "%g", &f);
+  if (!(matched == 1 && f == 123.0f))
+    return -44;
 
   fclose(file);
   return 0;
@@ -2032,6 +2488,272 @@ int test_fwrite() {
   }
   return 0;
 }
+
+// === flockfile / funlockfile tests ===
+
+int test_flockfile_basic() {
+  FILE *file = fopen("TestApp", "r");
+  if (file == NULL)
+    return -1;
+
+  flockfile(file);
+  funlockfile(file);
+
+  fclose(file);
+  return 0;
+}
+
+// flockfile is required to be recursive: the same thread may acquire the
+// lock multiple times and must release it the same number of times.
+int test_flockfile_recursive() {
+  FILE *file = fopen("TestApp", "r");
+  if (file == NULL)
+    return -1;
+
+  flockfile(file);
+  flockfile(file);
+  flockfile(file);
+  funlockfile(file);
+  funlockfile(file);
+  funlockfile(file);
+
+  // After unlocking the matching number of times, the stream must be
+  // available again, so ftrylockfile must succeed.
+  if (ftrylockfile(file) != 0) {
+    fclose(file);
+    return -2;
+  }
+  funlockfile(file);
+
+  fclose(file);
+  return 0;
+}
+
+int test_ftrylockfile_unlocked() {
+  FILE *file = fopen("TestApp", "r");
+  if (file == NULL)
+    return -1;
+
+  if (ftrylockfile(file) != 0) {
+    fclose(file);
+    return -2;
+  }
+  funlockfile(file);
+
+  fclose(file);
+  return 0;
+}
+
+struct ftrylockfile_args {
+  FILE *file;
+  int result;
+};
+
+void *ftrylockfile_other_thread(void *arg) {
+  struct ftrylockfile_args *a = arg;
+  a->result = ftrylockfile(a->file);
+  // If we somehow obtained the lock (we shouldn't), release it so the
+  // main thread is not left blocked.
+  if (a->result == 0)
+    funlockfile(a->file);
+  return NULL;
+}
+
+// When a stream is locked by one thread, ftrylockfile from another thread
+// must fail (return non-zero).
+int test_ftrylockfile_locked_by_other_thread() {
+  FILE *file = fopen("TestApp", "r");
+  if (file == NULL)
+    return -1;
+
+  flockfile(file);
+
+  struct ftrylockfile_args args = {file, -1};
+  pthread_t p;
+  if (pthread_create(&p, NULL, ftrylockfile_other_thread, &args) != 0) {
+    funlockfile(file);
+    fclose(file);
+    return -2;
+  }
+  if (pthread_join(p, NULL) != 0) {
+    funlockfile(file);
+    fclose(file);
+    return -3;
+  }
+
+  funlockfile(file);
+  fclose(file);
+
+  if (args.result == 0)
+    return -4;
+  return 0;
+}
+
+struct flockfile_blocking_args {
+  FILE *file;
+  pthread_mutex_t *mu;
+  pthread_cond_t *cv;
+  int *started;
+  int *acquired;
+};
+
+void *flockfile_blocking_thread(void *arg) {
+  struct flockfile_blocking_args *a = arg;
+
+  // Announce that we are about to attempt flockfile, so the main thread
+  // does not have to rely on a sleep to know we have made progress.
+  pthread_mutex_lock(a->mu);
+  *(a->started) = 1;
+  pthread_cond_signal(a->cv);
+  pthread_mutex_unlock(a->mu);
+
+  // This call must block until the main thread releases the stream lock.
+  flockfile(a->file);
+
+  pthread_mutex_lock(a->mu);
+  *(a->acquired) = 1;
+  pthread_cond_signal(a->cv);
+  pthread_mutex_unlock(a->mu);
+
+  funlockfile(a->file);
+  return NULL;
+}
+
+// flockfile must block another thread until the lock is released by the
+// thread that currently owns it.
+int test_flockfile_blocks_other_thread() {
+  FILE *file = fopen("TestApp", "r");
+  if (file == NULL)
+    return -1;
+
+  pthread_mutex_t mu;
+  if (pthread_mutex_init(&mu, NULL) != 0) {
+    fclose(file);
+    return -2;
+  }
+  pthread_cond_t cv;
+  if (pthread_cond_init(&cv, NULL) != 0) {
+    pthread_mutex_destroy(&mu);
+    fclose(file);
+    return -3;
+  }
+
+  int started = 0;
+  int acquired = 0;
+  struct flockfile_blocking_args args = {file, &mu, &cv, &started, &acquired};
+
+  flockfile(file);
+
+  pthread_t p;
+  if (pthread_create(&p, NULL, flockfile_blocking_thread, &args) != 0) {
+    funlockfile(file);
+    pthread_cond_destroy(&cv);
+    pthread_mutex_destroy(&mu);
+    fclose(file);
+    return -4;
+  }
+
+  // Wait until the worker thread has reached the point right before
+  // flockfile, then yield so the scheduler can run it into the blocking
+  // call.
+  pthread_mutex_lock(&mu);
+  while (!started)
+    pthread_cond_wait(&cv, &mu);
+  pthread_mutex_unlock(&mu);
+  sched_yield();
+
+  pthread_mutex_lock(&mu);
+  int acquired_before_unlock = acquired;
+  pthread_mutex_unlock(&mu);
+
+  funlockfile(file);
+
+  // Once we have released the stream lock, the worker must eventually be
+  // able to acquire it. Wait for that signal rather than for thread join
+  // so that a hang in flockfile is attributed to this assertion.
+  pthread_mutex_lock(&mu);
+  while (!acquired)
+    pthread_cond_wait(&cv, &mu);
+  pthread_mutex_unlock(&mu);
+
+  if (pthread_join(p, NULL) != 0) {
+    pthread_cond_destroy(&cv);
+    pthread_mutex_destroy(&mu);
+    fclose(file);
+    return -5;
+  }
+
+  pthread_cond_destroy(&cv);
+  pthread_mutex_destroy(&mu);
+  fclose(file);
+
+  if (acquired_before_unlock != 0)
+    return -6;
+  if (acquired != 1)
+    return -7;
+  return 0;
+}
+
+// flockfile is most commonly used to make a sequence of stdio calls atomic
+// from the perspective of other threads. Verify that the main stdio entry
+// points work normally while the current thread holds the stream lock.
+int test_flockfile_io_while_locked() {
+  FILE *file = fopen("TestApp", "r");
+  if (file == NULL)
+    return -1;
+
+  flockfile(file);
+
+  // ftello must succeed and report the initial position.
+  if (ftello(file) != 0) {
+    funlockfile(file);
+    fclose(file);
+    return -2;
+  }
+
+  // fread must succeed and advance the position.
+  char buf[8];
+  size_t n = fread(buf, 1, sizeof(buf), file);
+  if (n != sizeof(buf)) {
+    funlockfile(file);
+    fclose(file);
+    return -3;
+  }
+  if (ftello(file) != (off_t)sizeof(buf)) {
+    funlockfile(file);
+    fclose(file);
+    return -4;
+  }
+
+  // fseeko must succeed and reset the position.
+  if (fseeko(file, 0, SEEK_SET) != 0) {
+    funlockfile(file);
+    fclose(file);
+    return -5;
+  }
+  if (ftello(file) != 0) {
+    funlockfile(file);
+    fclose(file);
+    return -6;
+  }
+
+  // feof / clearerr / fflush / fileno must not abort while the lock is
+  // held by the calling thread.
+  (void)feof(file);
+  clearerr(file);
+  (void)fflush(file);
+  if (fileno(file) < 0) {
+    funlockfile(file);
+    fclose(file);
+    return -7;
+  }
+
+  funlockfile(file);
+  fclose(file);
+  return 0;
+}
+
+// === end flockfile / funlockfile tests ===
 
 int test_open() {
   int fd;
@@ -4016,6 +4738,292 @@ int test_strftime() {
   return 0;
 }
 
+@interface InvocationTarget : NSObject {
+@public
+  id receivedValue;
+  const char *cstringValue;
+  int intValue;
+}
+- (void)storeValue:(id)value;
+- (void)clearValue;
+- (void)storeCString:(const char *)str;
+- (void)storeIntPtr:(int *)ptr;
+@end
+
+@implementation InvocationTarget
+- (void)storeValue:(id)value {
+  receivedValue = value;
+}
+- (void)clearValue {
+  receivedValue = nil;
+}
+- (void)storeCString:(const char *)str {
+  cstringValue = str;
+}
+- (void)storeIntPtr:(int *)ptr {
+  intValue = *ptr;
+}
+@end
+
+static BOOL g_deallocTrackerDidDealloc = NO;
+
+@interface DeallocTracker : NSObject
+@end
+
+@implementation DeallocTracker
+- (void)dealloc {
+  g_deallocTrackerDidDealloc = YES;
+  [super dealloc];
+}
+@end
+
+int test_NSMethodSignature() {
+  NSAutoreleasePool *pool = [NSAutoreleasePool new];
+
+  // "v12@0:4@8" = void return, 3 args: self(@), _cmd(:), one id(@)
+  NSMethodSignature *sig =
+      [NSMethodSignature signatureWithObjCTypes:"v12@0:4@8"];
+
+  if ([sig numberOfArguments] != 3) {
+    [pool drain];
+    return -1;
+  }
+
+  // methodReturnType should be "v"
+  if (strcmp([sig methodReturnType], "v") != 0) {
+    [pool drain];
+    return -2;
+  }
+
+  // arg 0 = "@" (self)
+  if (strcmp([sig getArgumentTypeAtIndex:0], "@") != 0) {
+    [pool drain];
+    return -3;
+  }
+
+  // arg 1 = ":" (SEL)
+  if (strcmp([sig getArgumentTypeAtIndex:1], ":") != 0) {
+    [pool drain];
+    return -4;
+  }
+
+  // arg 2 = "@" (id argument)
+  if (strcmp([sig getArgumentTypeAtIndex:2], "@") != 0) {
+    [pool drain];
+    return -5;
+  }
+
+  // "v8@0:4" = void return, 2 args: self, _cmd (no extra args)
+  NSMethodSignature *sig2 = [NSMethodSignature signatureWithObjCTypes:"v8@0:4"];
+  if ([sig2 numberOfArguments] != 2) {
+    [pool drain];
+    return -6;
+  }
+  if (strcmp([sig2 methodReturnType], "v") != 0) {
+    [pool drain];
+    return -7;
+  }
+
+  // "v12@0:4^i8" = void return, 3 args: self(@), _cmd(:), pointer-to-int(^i)
+  NSMethodSignature *sig3 =
+      [NSMethodSignature signatureWithObjCTypes:"v12@0:4^i8"];
+  if ([sig3 numberOfArguments] != 3) {
+    [pool drain];
+    return -8;
+  }
+  if (strcmp([sig3 methodReturnType], "v") != 0) {
+    [pool drain];
+    return -9;
+  }
+  if (strcmp([sig3 getArgumentTypeAtIndex:2], "^i") != 0) {
+    [pool drain];
+    return -10;
+  }
+
+  [pool drain];
+  return 0;
+}
+
+int test_NSInvocation() {
+  NSAutoreleasePool *pool = [NSAutoreleasePool new];
+
+  InvocationTarget *target = [InvocationTarget new];
+  NSMethodSignature *sig =
+      [NSMethodSignature signatureWithObjCTypes:"v12@0:4@8"];
+  NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+
+  [inv setTarget:target];
+  SEL sel = NSSelectorFromString([NSString stringWithUTF8String:"storeValue:"]);
+  [inv setSelector:sel];
+
+  // setArgument:atIndex: takes a pointer to the argument value
+  NSObject *val = [NSObject new];
+  [inv setArgument:&val atIndex:2];
+  [inv invoke];
+
+  if (target->receivedValue != val) {
+    [pool drain];
+    return -1;
+  }
+
+  [pool drain];
+  return 0;
+}
+
+int test_NSInvocation_invokeWithTarget() {
+  NSAutoreleasePool *pool = [NSAutoreleasePool new];
+
+  InvocationTarget *target1 = [InvocationTarget new];
+  InvocationTarget *target2 = [InvocationTarget new];
+  NSMethodSignature *sig =
+      [NSMethodSignature signatureWithObjCTypes:"v12@0:4@8"];
+  NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+
+  [inv setTarget:target1];
+  SEL sel = NSSelectorFromString([NSString stringWithUTF8String:"storeValue:"]);
+  [inv setSelector:sel];
+
+  NSObject *val = [NSObject new];
+  [inv setArgument:&val atIndex:2];
+
+  // invokeWithTarget: should use target2, not target1
+  [inv invokeWithTarget:target2];
+
+  if (target2->receivedValue != val) {
+    [pool drain];
+    return -1;
+  }
+
+  [pool drain];
+  return 0;
+}
+
+int test_NSInvocation_retainArguments() {
+  NSAutoreleasePool *pool = [NSAutoreleasePool new];
+
+  // Test 1: object argument is retained by the invocation.
+  {
+    InvocationTarget *target = [InvocationTarget new];
+    NSMethodSignature *sig =
+        [NSMethodSignature signatureWithObjCTypes:"v12@0:4@8"];
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    [inv setTarget:target];
+    SEL sel =
+        NSSelectorFromString([NSString stringWithUTF8String:"storeValue:"]);
+    [inv setSelector:sel];
+
+    NSObject *val = [[NSObject alloc] init]; // retainCount = 1
+    NSUInteger before = [val retainCount];
+    [inv setArgument:&val atIndex:2];
+    [inv retainArguments]; // invocation must retain val
+    if ([val retainCount] != before + 1) {
+      [pool drain];
+      return -1;
+    }
+    // Invoke still works; val is alive because the invocation holds it.
+    [inv invoke];
+    if (target->receivedValue != val) {
+      [pool drain];
+      return -2;
+    }
+    [val release]; // balance our alloc; invocation still holds one ref
+  }
+
+  // Test 2: C string argument is copied so the invocation owns the bytes.
+  {
+    InvocationTarget *target = [InvocationTarget new];
+    // "v12@0:4*8" = void, self(@), _cmd(:), const char *(*)
+    NSMethodSignature *sig =
+        [NSMethodSignature signatureWithObjCTypes:"v12@0:4*8"];
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    [inv setTarget:target];
+    SEL sel =
+        NSSelectorFromString([NSString stringWithUTF8String:"storeCString:"]);
+    [inv setSelector:sel];
+
+    char buf[16];
+    strcpy(buf, "hello");
+    const char *ptr = buf;
+    [inv setArgument:&ptr atIndex:2];
+    [inv retainArguments]; // must copy "hello" into invocation-owned memory
+
+    // Overwrite original buffer; invocation must pass its copy, not buf.
+    strcpy(buf, "world");
+
+    [inv invoke];
+    if (strcmp(target->cstringValue, "hello") != 0) {
+      [pool drain];
+      return -3;
+    }
+  }
+
+  // Test 3: invocation keeps @ arg alive after caller drops its reference.
+  {
+    InvocationTarget *target = [InvocationTarget new];
+    NSMethodSignature *sig =
+        [NSMethodSignature signatureWithObjCTypes:"v12@0:4@8"];
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    [inv setTarget:target];
+    SEL sel =
+        NSSelectorFromString([NSString stringWithUTF8String:"storeValue:"]);
+    [inv setSelector:sel];
+
+    g_deallocTrackerDidDealloc = NO;
+    DeallocTracker *val = [[DeallocTracker alloc] init];
+    DeallocTracker *weakVal = val; // un-retained alias
+    [inv setArgument:&val atIndex:2];
+    [inv retainArguments]; // invocation owns its own reference now
+    [val release];         // caller drops its reference
+    val = nil;
+
+    // Without the invocation's retain, val would now be deallocated.
+    if (g_deallocTrackerDidDealloc) {
+      [pool drain];
+      return -4;
+    }
+    [inv invoke];
+    if (target->receivedValue != weakVal) {
+      [pool drain];
+      return -5;
+    }
+    if (g_deallocTrackerDidDealloc) {
+      [pool drain];
+      return -6;
+    }
+  }
+
+  [pool drain];
+  return 0;
+}
+
+int test_NSInvocation_pointer() {
+  NSAutoreleasePool *pool = [NSAutoreleasePool new];
+
+  InvocationTarget *target = [InvocationTarget new];
+  // "v12@0:4^i8" = void, self(@), _cmd(:), int *(^i)
+  NSMethodSignature *sig =
+      [NSMethodSignature signatureWithObjCTypes:"v12@0:4^i8"];
+  NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+
+  [inv setTarget:target];
+  SEL sel =
+      NSSelectorFromString([NSString stringWithUTF8String:"storeIntPtr:"]);
+  [inv setSelector:sel];
+
+  int x = 42;
+  int *ptr = &x;
+  [inv setArgument:&ptr atIndex:2];
+  [inv invoke];
+
+  if (target->intValue != 42) {
+    [pool drain];
+    return -1;
+  }
+
+  [pool drain];
+  return 0;
+}
+
 @interface CharBufferObject : NSObject {
 @public
   char *buffer;
@@ -4062,6 +5070,52 @@ int test_strftime() {
 }
 @end
 
+@interface IntCoderObject : NSObject {
+@public
+  int value;
+}
+@end
+
+@implementation IntCoderObject
+- (instancetype)initWithValue:(int)v {
+  self = [super init];
+  value = v;
+  return self;
+}
+
+- (void)encodeWithCoder:(NSCoder *)coder {
+  [coder encodeInt:value forKey:[NSString stringWithUTF8String:"value"]];
+}
+
+- (instancetype)initWithCoder:(NSCoder *)coder {
+  self = [super init];
+  value = [coder decodeIntForKey:[NSString stringWithUTF8String:"value"]];
+  return self;
+}
+@end
+
+int test_NSKeyedArchiver_encodeIntForKey() {
+  NSAutoreleasePool *pool = [NSAutoreleasePool new];
+
+  int values[] = {12345, 0, -1, -12345, 0x7FFFFFFF, -0x80000000};
+  int count = sizeof(values) / sizeof(int);
+
+  for (int i = 0; i < count; i++) {
+    IntCoderObject *obj = [[IntCoderObject alloc] initWithValue:values[i]];
+    NSData *archivedData = [NSKeyedArchiver archivedDataWithRootObject:obj];
+    IntCoderObject *unarchivedObj =
+        [NSKeyedUnarchiver unarchiveObjectWithData:archivedData];
+
+    if (unarchivedObj->value != values[i]) {
+      [pool drain];
+      return -(i + 1);
+    }
+  }
+
+  [pool drain];
+  return 0;
+}
+
 int test_NSKeyedArchiver_NSKeyedUnarchiver() {
   NSAutoreleasePool *pool = [NSAutoreleasePool new];
   char buffer[100];
@@ -4085,6 +5139,73 @@ int test_NSKeyedArchiver_NSKeyedUnarchiver() {
   if (unarchivedObj->badKeyBuffer != NULL) {
     return -4;
   }
+  [pool drain];
+  return 0;
+}
+
+int test_NSKeyedArchiver_NSDictionary_of_NSArray_of_NSStrings() {
+  NSAutoreleasePool *pool = [NSAutoreleasePool new];
+
+  NSArray *fruits =
+      [NSArray arrayWithObjects:[NSString stringWithUTF8String:"apple"],
+                                [NSString stringWithUTF8String:"banana"],
+                                [NSString stringWithUTF8String:"cherry"], nil];
+  NSArray *colors =
+      [NSArray arrayWithObjects:[NSString stringWithUTF8String:"red"],
+                                [NSString stringWithUTF8String:"green"],
+                                [NSString stringWithUTF8String:"blue"], nil];
+  NSArray *values = [NSArray arrayWithObjects:fruits, colors, nil];
+  NSArray *keys =
+      [NSArray arrayWithObjects:[NSString stringWithUTF8String:"fruits"],
+                                [NSString stringWithUTF8String:"colors"], nil];
+  NSDictionary *dict = [NSDictionary dictionaryWithObjects:values forKeys:keys];
+
+  NSData *archivedData = [NSKeyedArchiver archivedDataWithRootObject:dict];
+  NSDictionary *unarchivedDict =
+      [NSKeyedUnarchiver unarchiveObjectWithData:archivedData];
+
+  if (![unarchivedDict isKindOfClass:[NSDictionary class]]) {
+    [pool drain];
+    return -1;
+  }
+  if ([unarchivedDict count] != [dict count]) {
+    [pool drain];
+    return -2;
+  }
+  if (![unarchivedDict isEqualToDictionary:dict]) {
+    [pool drain];
+    return -3;
+  }
+
+  NSArray *unarchivedFruits =
+      [unarchivedDict objectForKey:[NSString stringWithUTF8String:"fruits"]];
+  if (![unarchivedFruits isKindOfClass:[NSArray class]]) {
+    [pool drain];
+    return -4;
+  }
+  if (![unarchivedFruits isEqualToArray:fruits]) {
+    [pool drain];
+    return -5;
+  }
+
+  NSArray *unarchivedColors =
+      [unarchivedDict objectForKey:[NSString stringWithUTF8String:"colors"]];
+  if (![unarchivedColors isKindOfClass:[NSArray class]]) {
+    [pool drain];
+    return -6;
+  }
+  if (![unarchivedColors isEqualToArray:colors]) {
+    [pool drain];
+    return -7;
+  }
+
+  for (NSUInteger i = 0; i < [unarchivedFruits count]; i++) {
+    if (![[unarchivedFruits objectAtIndex:i] isKindOfClass:[NSString class]]) {
+      [pool drain];
+      return -8;
+    }
+  }
+
   [pool drain];
   return 0;
 }
@@ -4389,10 +5510,21 @@ struct {
     FUNC_DEF(test_mbstowcs),
     FUNC_DEF(test_CFMutableString),
     FUNC_DEF(test_fwrite),
+    FUNC_DEF(test_flockfile_basic),
+    FUNC_DEF(test_flockfile_recursive),
+    FUNC_DEF(test_ftrylockfile_unlocked),
+    FUNC_DEF(test_ftrylockfile_locked_by_other_thread),
+    FUNC_DEF(test_flockfile_blocks_other_thread),
+    FUNC_DEF(test_flockfile_io_while_locked),
     FUNC_DEF(test_open),
     FUNC_DEF(test_close),
     FUNC_DEF(test_cond_var),
     FUNC_DEF(test_cond_var_static),
+    FUNC_DEF(test_cond_timedwait_signaled_before_timeout),
+    FUNC_DEF(test_cond_timedwait_past_deadline),
+    FUNC_DEF(test_cond_timedwait_broadcast),
+    FUNC_DEF(test_cond_timedwait_flag_not_sticky),
+    FUNC_DEF(test_cond_timedwait_sibling_not_dropped),
     FUNC_DEF(test_pthread_mutex_normal),
     FUNC_DEF(test_pthread_mutex_recursive_trylock),
     FUNC_DEF(test_CFMutableDictionary_NullCallbacks),
@@ -4422,9 +5554,17 @@ struct {
     FUNC_DEF(test_strptime),
     FUNC_DEF(test_strftime),
     FUNC_DEF(test_RespondsToSelector),
+    FUNC_DEF(test_NSKeyedArchiver_encodeIntForKey),
     FUNC_DEF(test_NSKeyedArchiver_NSKeyedUnarchiver),
+    FUNC_DEF(test_NSKeyedArchiver_NSDictionary_of_NSArray_of_NSStrings),
     FUNC_DEF(test_AutoreleasePool),
     FUNC_DEF(test_NSNumber_stringValue),
+    FUNC_DEF(test_NSMethodSignature),
+    FUNC_DEF(test_NSInvocation),
+    FUNC_DEF(test_NSInvocation_invokeWithTarget),
+    FUNC_DEF(test_NSInvocation_retainArguments),
+    FUNC_DEF(test_NSInvocation_pointer),
+    FUNC_DEF(test_Initialize),
 };
 // clang-format on
 
