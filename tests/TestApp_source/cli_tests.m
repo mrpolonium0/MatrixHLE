@@ -21,6 +21,7 @@
 #include <locale.h>
 #include <mach/kern_return.h>
 #include <mach/thread_info.h>
+#include <malloc/malloc.h>
 #include <math.h>
 #include <pthread.h>
 #include <semaphore.h>
@@ -749,6 +750,145 @@ int test_sscanf() {
   matched = sscanf("123", "%3[a-z]", str);
   if (matched != 0)
     return -55;
+  // %hu (unsigned short) edge cases
+  unsigned short us, us2;
+  matched = sscanf("0", "%hu", &us);
+  if (!(matched == 1 && us == 0))
+    return -56;
+  matched = sscanf("65535", "%hu", &us);
+  if (!(matched == 1 && us == 65535))
+    return -57;
+  // Truncation: 65536 wraps to 0 as unsigned short
+  matched = sscanf("65536", "%hu", &us);
+  if (!(matched == 1 && us == 0))
+    return -58;
+  // Truncation: 65537 wraps to 1 as unsigned short
+  matched = sscanf("65537", "%hu", &us);
+  if (!(matched == 1 && us == 1))
+    return -59;
+  matched = sscanf("100 200", "%hu %hu", &us, &us2);
+  if (!(matched == 2 && us == 100 && us2 == 200))
+    return -60;
+  // width limits the conversion
+  matched = sscanf("12345", "%3hu", &us);
+  if (!(matched == 1 && us == 123))
+    return -61;
+  // %hhu (unsigned char) edge cases
+  unsigned char uc, uc2;
+  matched = sscanf("0", "%hhu", &uc);
+  if (!(matched == 1 && uc == 0))
+    return -62;
+  matched = sscanf("255", "%hhu", &uc);
+  if (!(matched == 1 && uc == 255))
+    return -63;
+  // Truncation: 256 wraps to 0 as unsigned char
+  matched = sscanf("256", "%hhu", &uc);
+  if (!(matched == 1 && uc == 0))
+    return -64;
+  // Truncation: 257 wraps to 1 as unsigned char
+  matched = sscanf("257", "%hhu", &uc);
+  if (!(matched == 1 && uc == 1))
+    return -65;
+  matched = sscanf("10 20", "%hhu %hhu", &uc, &uc2);
+  if (!(matched == 2 && uc == 10 && uc2 == 20))
+    return -66;
+  // width limits the conversion
+  matched = sscanf("12345", "%2hhu", &uc);
+  if (!(matched == 1 && uc == 12))
+    return -67;
+  // Overflow above UINT_MAX: per C semantics, the input is parsed as
+  // a wide unsigned and only the low bits are stored, so 0x100000000
+  // gives 0 in both u16 and u8.
+  matched = sscanf("4294967296", "%hu", &us);
+  if (!(matched == 1 && us == 0))
+    return -68;
+  matched = sscanf("4294967296", "%hhu", &uc);
+  if (!(matched == 1 && uc == 0))
+    return -69;
+  // %hx (unsigned short, hex) truncation
+  matched = sscanf("ffff", "%hx", &us);
+  if (!(matched == 1 && us == 0xFFFF))
+    return -70;
+  // Truncation: 0x10000 wraps to 0 as unsigned short
+  matched = sscanf("10000", "%hx", &us);
+  if (!(matched == 1 && us == 0))
+    return -71;
+  // Truncation: 0x10001 wraps to 1 as unsigned short
+  matched = sscanf("10001", "%hx", &us);
+  if (!(matched == 1 && us == 1))
+    return -72;
+  // %hhx (unsigned char, hex) truncation
+  matched = sscanf("ff", "%hhx", &uc);
+  if (!(matched == 1 && uc == 0xFF))
+    return -73;
+  // Truncation: 0x100 wraps to 0 as unsigned char
+  matched = sscanf("100", "%hhx", &uc);
+  if (!(matched == 1 && uc == 0))
+    return -74;
+  // Truncation: 0x101 wraps to 1 as unsigned char
+  matched = sscanf("101", "%hhx", &uc);
+  if (!(matched == 1 && uc == 1))
+    return -75;
+  // %hd (signed short) edge cases
+  short ss, ss2;
+  matched = sscanf("0", "%hd", &ss);
+  if (!(matched == 1 && ss == 0))
+    return -76;
+  matched = sscanf("32767", "%hd", &ss);
+  if (!(matched == 1 && ss == 32767))
+    return -77;
+  matched = sscanf("-32768", "%hd", &ss);
+  if (!(matched == 1 && ss == -32768))
+    return -78;
+  // Truncation: 32768 wraps to -32768 as signed short
+  matched = sscanf("32768", "%hd", &ss);
+  if (!(matched == 1 && ss == -32768))
+    return -79;
+  // Truncation: -32769 wraps to 32767 as signed short
+  matched = sscanf("-32769", "%hd", &ss);
+  if (!(matched == 1 && ss == 32767))
+    return -80;
+  matched = sscanf("-100 200", "%hd %hd", &ss, &ss2);
+  if (!(matched == 2 && ss == -100 && ss2 == 200))
+    return -81;
+  // width limits the conversion
+  matched = sscanf("12345", "%3hd", &ss);
+  if (!(matched == 1 && ss == 123))
+    return -82;
+  // width counts the sign character
+  matched = sscanf("-12345", "%4hd", &ss);
+  if (!(matched == 1 && ss == -123))
+    return -83;
+  // %hhd (signed char) edge cases
+  signed char sc, sc2;
+  matched = sscanf("0", "%hhd", &sc);
+  if (!(matched == 1 && sc == 0))
+    return -84;
+  matched = sscanf("127", "%hhd", &sc);
+  if (!(matched == 1 && sc == 127))
+    return -85;
+  matched = sscanf("-128", "%hhd", &sc);
+  if (!(matched == 1 && sc == -128))
+    return -86;
+  // Truncation: 128 wraps to -128 as signed char
+  matched = sscanf("128", "%hhd", &sc);
+  if (!(matched == 1 && sc == -128))
+    return -87;
+  // Truncation: -129 wraps to 127 as signed char
+  matched = sscanf("-129", "%hhd", &sc);
+  if (!(matched == 1 && sc == 127))
+    return -88;
+  matched = sscanf("-10 20", "%hhd %hhd", &sc, &sc2);
+  if (!(matched == 2 && sc == -10 && sc2 == 20))
+    return -89;
+  // width limits the conversion
+  matched = sscanf("12345", "%2hhd", &sc);
+  if (!(matched == 1 && sc == 12))
+    return -90;
+  // width counts the sign character
+  matched = sscanf("-12345", "%3hhd", &sc);
+  if (!(matched == 1 && sc == -12))
+    return -91;
   return 0;
 }
 
@@ -770,6 +910,21 @@ int test_realloc() {
   int res = memcmp(ptr, "abcd", 4);
   free(ptr);
   return res == 0 ? 0 : -1;
+}
+
+int test_valloc() {
+  void *ptr = valloc(1);
+  // Assume at least 4Kb page size alignment
+  if (((uintptr_t)ptr & 0xFFF) != 0) {
+    return -1;
+  }
+  if (ptr == NULL)
+    return -2;
+  ptr = realloc(ptr, 16);
+  if (ptr == NULL)
+    return -3;
+  free(ptr);
+  return 0;
 }
 
 int test_atof() {
@@ -2343,6 +2498,218 @@ int test_fscanf_new() {
   matched = fscanf(file, "%g", &f);
   if (!(matched == 1 && f == 123.0f))
     return -44;
+  SKIP_LINE(file);
+
+  // %hu (unsigned short) edge cases
+  unsigned short us, us2;
+  matched = fscanf(file, "%hu", &us);
+  if (!(matched == 1 && us == 0))
+    return -45;
+  SKIP_LINE(file);
+
+  matched = fscanf(file, "%hu", &us);
+  if (!(matched == 1 && us == 65535))
+    return -46;
+  SKIP_LINE(file);
+
+  // Truncation: 65536 wraps to 0 as unsigned short
+  matched = fscanf(file, "%hu", &us);
+  if (!(matched == 1 && us == 0))
+    return -47;
+  SKIP_LINE(file);
+
+  // Truncation: 65537 wraps to 1 as unsigned short
+  matched = fscanf(file, "%hu", &us);
+  if (!(matched == 1 && us == 1))
+    return -48;
+  SKIP_LINE(file);
+
+  matched = fscanf(file, "%hu %hu", &us, &us2);
+  if (!(matched == 2 && us == 100 && us2 == 200))
+    return -49;
+  SKIP_LINE(file);
+
+  // width limits the conversion
+  matched = fscanf(file, "%3hu", &us);
+  if (!(matched == 1 && us == 123))
+    return -50;
+  SKIP_LINE(file);
+
+  // %hhu (unsigned char) edge cases
+  unsigned char uc, uc2;
+  matched = fscanf(file, "%hhu", &uc);
+  if (!(matched == 1 && uc == 0))
+    return -51;
+  SKIP_LINE(file);
+
+  matched = fscanf(file, "%hhu", &uc);
+  if (!(matched == 1 && uc == 255))
+    return -52;
+  SKIP_LINE(file);
+
+  // Truncation: 256 wraps to 0 as unsigned char
+  matched = fscanf(file, "%hhu", &uc);
+  if (!(matched == 1 && uc == 0))
+    return -53;
+  SKIP_LINE(file);
+
+  // Truncation: 257 wraps to 1 as unsigned char
+  matched = fscanf(file, "%hhu", &uc);
+  if (!(matched == 1 && uc == 1))
+    return -54;
+  SKIP_LINE(file);
+
+  matched = fscanf(file, "%hhu %hhu", &uc, &uc2);
+  if (!(matched == 2 && uc == 10 && uc2 == 20))
+    return -55;
+  SKIP_LINE(file);
+
+  // width limits the conversion
+  matched = fscanf(file, "%2hhu", &uc);
+  if (!(matched == 1 && uc == 12))
+    return -56;
+  SKIP_LINE(file);
+
+  // Overflow above UINT_MAX: per C semantics, the input is parsed as
+  // a wide unsigned and only the low bits are stored, so 0x100000000
+  // gives 0 in both u16 and u8.
+  matched = fscanf(file, "%hu", &us);
+  if (!(matched == 1 && us == 0))
+    return -57;
+  SKIP_LINE(file);
+
+  matched = fscanf(file, "%hhu", &uc);
+  if (!(matched == 1 && uc == 0))
+    return -58;
+  SKIP_LINE(file);
+
+  // %hx (unsigned short, hex) truncation
+  matched = fscanf(file, "%hx", &us);
+  if (!(matched == 1 && us == 0xFFFF))
+    return -59;
+  SKIP_LINE(file);
+
+  // Truncation: 0x10000 wraps to 0 as unsigned short
+  matched = fscanf(file, "%hx", &us);
+  if (!(matched == 1 && us == 0))
+    return -60;
+  SKIP_LINE(file);
+
+  // Truncation: 0x10001 wraps to 1 as unsigned short
+  matched = fscanf(file, "%hx", &us);
+  if (!(matched == 1 && us == 1))
+    return -61;
+  SKIP_LINE(file);
+
+  // %hhx (unsigned char, hex) truncation
+  matched = fscanf(file, "%hhx", &uc);
+  if (!(matched == 1 && uc == 0xFF))
+    return -62;
+  SKIP_LINE(file);
+
+  // Truncation: 0x100 wraps to 0 as unsigned char
+  matched = fscanf(file, "%hhx", &uc);
+  if (!(matched == 1 && uc == 0))
+    return -63;
+  SKIP_LINE(file);
+
+  // Truncation: 0x101 wraps to 1 as unsigned char
+  matched = fscanf(file, "%hhx", &uc);
+  if (!(matched == 1 && uc == 1))
+    return -64;
+  SKIP_LINE(file);
+
+  // %hd (signed short) edge cases
+  short ss, ss2;
+  matched = fscanf(file, "%hd", &ss);
+  if (!(matched == 1 && ss == 0))
+    return -65;
+  SKIP_LINE(file);
+
+  matched = fscanf(file, "%hd", &ss);
+  if (!(matched == 1 && ss == 32767))
+    return -66;
+  SKIP_LINE(file);
+
+  matched = fscanf(file, "%hd", &ss);
+  if (!(matched == 1 && ss == -32768))
+    return -67;
+  SKIP_LINE(file);
+
+  // Truncation: 32768 wraps to -32768 as signed short
+  matched = fscanf(file, "%hd", &ss);
+  if (!(matched == 1 && ss == -32768))
+    return -68;
+  SKIP_LINE(file);
+
+  // Truncation: -32769 wraps to 32767 as signed short
+  matched = fscanf(file, "%hd", &ss);
+  if (!(matched == 1 && ss == 32767))
+    return -69;
+  SKIP_LINE(file);
+
+  matched = fscanf(file, "%hd %hd", &ss, &ss2);
+  if (!(matched == 2 && ss == -100 && ss2 == 200))
+    return -70;
+  SKIP_LINE(file);
+
+  // width limits the conversion
+  matched = fscanf(file, "%3hd", &ss);
+  if (!(matched == 1 && ss == 123))
+    return -71;
+  SKIP_LINE(file);
+
+  // width counts the sign character
+  matched = fscanf(file, "%4hd", &ss);
+  if (!(matched == 1 && ss == -123))
+    return -72;
+  SKIP_LINE(file);
+
+  // %hhd (signed char) edge cases
+  signed char sc, sc2;
+  matched = fscanf(file, "%hhd", &sc);
+  if (!(matched == 1 && sc == 0))
+    return -73;
+  SKIP_LINE(file);
+
+  matched = fscanf(file, "%hhd", &sc);
+  if (!(matched == 1 && sc == 127))
+    return -74;
+  SKIP_LINE(file);
+
+  matched = fscanf(file, "%hhd", &sc);
+  if (!(matched == 1 && sc == -128))
+    return -75;
+  SKIP_LINE(file);
+
+  // Truncation: 128 wraps to -128 as signed char
+  matched = fscanf(file, "%hhd", &sc);
+  if (!(matched == 1 && sc == -128))
+    return -76;
+  SKIP_LINE(file);
+
+  // Truncation: -129 wraps to 127 as signed char
+  matched = fscanf(file, "%hhd", &sc);
+  if (!(matched == 1 && sc == 127))
+    return -77;
+  SKIP_LINE(file);
+
+  matched = fscanf(file, "%hhd %hhd", &sc, &sc2);
+  if (!(matched == 2 && sc == -10 && sc2 == 20))
+    return -78;
+  SKIP_LINE(file);
+
+  // width limits the conversion
+  matched = fscanf(file, "%2hhd", &sc);
+  if (!(matched == 1 && sc == 12))
+    return -79;
+  SKIP_LINE(file);
+
+  // width counts the sign character
+  matched = fscanf(file, "%3hhd", &sc);
+  if (!(matched == 1 && sc == -12))
+    return -80;
+  SKIP_LINE(file);
 
   fclose(file);
   return 0;
@@ -5464,6 +5831,220 @@ int test_NSNumber_stringValue() {
   return 0;
 }
 
+@interface NotificationObserver : NSObject {
+@public
+  int receivedCount;
+  id lastNotification;
+}
+- (void)handleNotification:(NSNotification *)notification;
+@end
+
+@implementation NotificationObserver
+- (void)handleNotification:(NSNotification *)notification {
+  receivedCount++;
+  [lastNotification release];
+  lastNotification = [notification retain];
+}
+- (void)dealloc {
+  [lastNotification release];
+  [super dealloc];
+}
+@end
+
+// When name is nil, the observer should receive notifications of any name.
+int test_NSNotificationCenter_addObserver_nilName() {
+  NSAutoreleasePool *pool = [NSAutoreleasePool new];
+
+  NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
+  NotificationObserver *observer = [NotificationObserver new];
+  SEL sel = NSSelectorFromString(
+      [NSString stringWithUTF8String:"handleNotification:"]);
+
+  [center addObserver:observer selector:sel name:nil object:nil];
+
+  [center postNotificationName:[NSString stringWithUTF8String:"FirstName"]
+                        object:nil];
+  if (observer->receivedCount != 1) {
+    [center removeObserver:observer];
+    [observer release];
+    [pool drain];
+    return -1;
+  }
+
+  [center postNotificationName:[NSString stringWithUTF8String:"SecondName"]
+                        object:nil];
+  if (observer->receivedCount != 2) {
+    [center removeObserver:observer];
+    [observer release];
+    [pool drain];
+    return -2;
+  }
+
+  // The last notification's name should match the most recently posted one.
+  NSString *lastName = [observer->lastNotification name];
+  NSString *expectedName = [NSString stringWithUTF8String:"SecondName"];
+  if (![lastName isEqualToString:expectedName]) {
+    [center removeObserver:observer];
+    [observer release];
+    [pool drain];
+    return -3;
+  }
+
+  [center removeObserver:observer];
+  [observer release];
+  [pool drain];
+  return 0;
+}
+
+// When name is nil but object is specified, only notifications from that
+// sender (with any name) should be delivered to the observer.
+int test_NSNotificationCenter_addObserver_nilName_withObject() {
+  NSAutoreleasePool *pool = [NSAutoreleasePool new];
+
+  NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
+  NotificationObserver *observer = [NotificationObserver new];
+  SEL sel = NSSelectorFromString(
+      [NSString stringWithUTF8String:"handleNotification:"]);
+
+  NSObject *sender = [NSObject new];
+  NSObject *otherSender = [NSObject new];
+
+  [center addObserver:observer selector:sel name:nil object:sender];
+
+  // Notification from the matching sender should be delivered, regardless of
+  // the notification's name.
+  [center postNotificationName:[NSString stringWithUTF8String:"AnyName"]
+                        object:sender];
+  if (observer->receivedCount != 1) {
+    [center removeObserver:observer];
+    [sender release];
+    [otherSender release];
+    [observer release];
+    [pool drain];
+    return -1;
+  }
+
+  // Notification from a different sender should be filtered out, even though
+  // name is nil.
+  [center postNotificationName:[NSString stringWithUTF8String:"AnyName"]
+                        object:otherSender];
+  if (observer->receivedCount != 1) {
+    [center removeObserver:observer];
+    [sender release];
+    [otherSender release];
+    [observer release];
+    [pool drain];
+    return -2;
+  }
+
+  // A different notification name from the matching sender should still be
+  // delivered.
+  [center postNotificationName:[NSString stringWithUTF8String:"OtherName"]
+                        object:sender];
+  if (observer->receivedCount != 2) {
+    [center removeObserver:observer];
+    [sender release];
+    [otherSender release];
+    [observer release];
+    [pool drain];
+    return -3;
+  }
+
+  [center removeObserver:observer];
+  [sender release];
+  [otherSender release];
+  [observer release];
+  [pool drain];
+  return 0;
+}
+
+// An observer registered with name=nil should be properly unregistered by
+// removeObserver:, so it must not receive any further notifications.
+int test_NSNotificationCenter_addObserver_nilName_removeObserver() {
+  NSAutoreleasePool *pool = [NSAutoreleasePool new];
+
+  NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
+  NotificationObserver *observer = [NotificationObserver new];
+  SEL sel = NSSelectorFromString(
+      [NSString stringWithUTF8String:"handleNotification:"]);
+
+  [center addObserver:observer selector:sel name:nil object:nil];
+
+  [center postNotificationName:[NSString stringWithUTF8String:"BeforeRemove"]
+                        object:nil];
+  if (observer->receivedCount != 1) {
+    [center removeObserver:observer];
+    [observer release];
+    [pool drain];
+    return -1;
+  }
+
+  [center removeObserver:observer];
+
+  [center postNotificationName:[NSString stringWithUTF8String:"AfterRemove"]
+                        object:nil];
+  if (observer->receivedCount != 1) {
+    [observer release];
+    [pool drain];
+    return -2;
+  }
+
+  // Posting under a different name after removal should not deliver either.
+  [center postNotificationName:[NSString stringWithUTF8String:"OtherName"]
+                        object:nil];
+  if (observer->receivedCount != 1) {
+    [observer release];
+    [pool drain];
+    return -3;
+  }
+
+  [observer release];
+  [pool drain];
+  return 0;
+}
+
+int test_malloc_zone_basic() {
+  malloc_zone_t *zone = malloc_create_zone(0, 0);
+  unsigned char *p = malloc_zone_malloc(zone, 128);
+  if (zone->size(zone, p) != 128) {
+    return -1;
+  }
+
+  memset(p, 0xAB, 128);
+  for (int i = 0; i < 128; i++) {
+    if (p[i] != 0xAB) {
+      malloc_zone_free(zone, p);
+      malloc_destroy_zone(zone);
+      return -2;
+    }
+  }
+  malloc_zone_free(zone, p);
+  malloc_destroy_zone(zone);
+
+  return 0;
+}
+
+int test_malloc_zone_struct_dispatch() {
+  malloc_zone_t *zone = malloc_default_zone();
+  if (!zone)
+    return -1;
+
+  void *p = zone->malloc(zone, 128);
+  if (!p)
+    return -2;
+
+  // malloc_size() uses the default zone. If the allocation did not work
+  // this should cause a panic and thus fail the test.
+  size_t sz = malloc_size(p);
+  if (sz != 128) {
+    zone->free(zone, p);
+    return -3;
+  }
+
+  zone->free(zone, p);
+  return 0;
+}
+
 // clang-format off
 #define FUNC_DEF(func)                                                         \
   { &func, #func }
@@ -5485,6 +6066,7 @@ struct {
     FUNC_DEF(test_sscanf),
     FUNC_DEF(test_swscanf),
     FUNC_DEF(test_realloc),
+    FUNC_DEF(test_valloc),
     FUNC_DEF(test_atof),
     FUNC_DEF(test_strtof),
     FUNC_DEF(test_sem),
@@ -5565,6 +6147,11 @@ struct {
     FUNC_DEF(test_NSInvocation_retainArguments),
     FUNC_DEF(test_NSInvocation_pointer),
     FUNC_DEF(test_Initialize),
+    FUNC_DEF(test_NSNotificationCenter_addObserver_nilName),
+    FUNC_DEF(test_NSNotificationCenter_addObserver_nilName_withObject),
+    FUNC_DEF(test_NSNotificationCenter_addObserver_nilName_removeObserver),
+    FUNC_DEF(test_malloc_zone_basic),
+    FUNC_DEF(test_malloc_zone_struct_dispatch),
 };
 // clang-format on
 

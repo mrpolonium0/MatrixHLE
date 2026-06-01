@@ -469,6 +469,16 @@ pub const CLASSES: ClassExports = objc_classes! {
     utf16[index as usize]
 }
 
+- (NSUInteger)lengthOfBytesUsingEncoding:(NSStringEncoding)encoding {
+    if C_STRING_FRIENDLY_ENCODINGS.contains(&encoding) {
+        let string = to_rust_string(env, this);
+        assert!(string.as_bytes().iter().all(|byte| byte.is_ascii())); // TODO
+        string.len().try_into().unwrap()
+    } else {
+        unimplemented!("lengthOfBytesUsingEncoding: {}", encoding)
+    }
+}
+
 - (NSRange)rangeOfString:(id)search_string {
     msg![env; this rangeOfString:search_string options:0u32]
 }
@@ -678,6 +688,13 @@ pub const CLASSES: ClassExports = objc_classes! {
     let str_mut: id = msg![env; str_mut init];
     () = msg![env; str_mut setString:this];
     str_mut
+}
+
+- (bool)getFileSystemRepresentation:(MutPtr<u8>)buffer
+                          maxLength:(NSUInteger)buffer_size {
+    msg![env; this getCString:buffer
+                    maxLength:buffer_size
+                     encoding:NSUTF8StringEncoding]
 }
 
 - (bool)getCString:(MutPtr<u8>)buffer
@@ -1305,6 +1322,10 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 - (id)initWithData:(id)data // NSData *
           encoding:(NSStringEncoding)encoding {
+    if data == nil {
+        release(env, this);
+        return nil;
+    }
     let bytes: ConstVoidPtr = msg![env; data bytes];
     let bytes: ConstPtr<u8> = bytes.cast();
     let length: NSUInteger = msg![env; data length];
@@ -1954,7 +1975,7 @@ mod ns_string_tests {
 /// In case of small buffer no data is written.
 ///
 /// Right now this helper is used for `NSString getCString:maxLength:encoding:`
-/// method and `CFStringGetPascalString` function.
+/// method, `CFStringGetPascalString` and `CFStringGetBytes` functions.
 pub fn get_bytes_buffer_inner(
     env: &mut Environment,
     str: id, // NSString *

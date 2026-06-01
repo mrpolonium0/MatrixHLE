@@ -7,7 +7,6 @@
 
 use crate::abi::{CallFromHost, GuestFunction};
 use crate::audio; // Keep this module namespaced to avoid confusion
-use crate::audio::AudioDescription;
 use crate::dyld::{export_c_func, FunctionExports};
 use crate::frameworks::carbon_core::{eofErr, OSStatus};
 use crate::frameworks::core_audio_types::{debug_fourcc, fourcc, AudioStreamBasicDescription};
@@ -63,6 +62,7 @@ const kAudioFileCAFType: AudioFileTypeID = fourcc(b"caff");
 
 /// Usually a FourCC.
 type AudioFilePropertyID = u32;
+pub const kAudioFilePropertyFileFormat: AudioFilePropertyID = fourcc(b"ffmt");
 pub const kAudioFilePropertyDataFormat: AudioFilePropertyID = fourcc(b"dfmt");
 const kAudioFilePropertyAudioDataByteCount: AudioFilePropertyID = fourcc(b"bcnt");
 const kAudioFilePropertyAudioDataPacketCount: AudioFilePropertyID = fourcc(b"pcnt");
@@ -202,17 +202,10 @@ pub fn AudioFileOpenWithCallbacks(
         .bytes_at(data_ptr, env.mem.read(bytes_read_ptr))
         .to_vec();
 
-    let Ok(audio_file) = audio::AudioFile::read_from_vec(data_vec) else {
-        log!("Warning: AudioFileOpenWithCallbacks() failed parse",);
+    let Ok(guest_audio_file) = guest_audio_file_read_from_vec(env, data_vec) else {
+        log!("Warning: AudioFileOpenWithCallbacks() failed parse");
         return kAudioFileUnsupportedFileTypeError;
     };
-    let guest_audio_file = env.mem.alloc_and_write(OpaqueAudioFileID { _filler: 0 });
-
-    let host_object = AudioFileHostObject { audio_file };
-
-    State::get(&mut env.framework_state)
-        .audio_files
-        .insert(guest_audio_file, host_object);
 
     env.mem.write(out_audio_file, guest_audio_file);
 
@@ -226,6 +219,7 @@ pub fn AudioFileOpenWithCallbacks(
 
 pub(super) fn property_size(property_id: AudioFilePropertyID) -> GuestUSize {
     match property_id {
+        kAudioFilePropertyFileFormat => guest_size_of::<u32>(),
         kAudioFilePropertyDataFormat => guest_size_of::<AudioStreamBasicDescription>(),
         kAudioFilePropertyAudioDataByteCount => guest_size_of::<u64>(),
         kAudioFilePropertyAudioDataPacketCount => guest_size_of::<u64>(),
@@ -279,7 +273,12 @@ pub fn AudioFileGetProperty(
 
     let required_size = property_size(in_property_id);
     if env.mem.read(io_data_size) != required_size {
-        log!("Warning: AudioFileGetProperty() failed");
+        log!(
+            "Warning: AudioFileGetProperty({}) failed, {} != {}",
+            debug_fourcc(in_property_id),
+            env.mem.read(io_data_size),
+            required_size
+        );
         return kAudioFileBadPropertySizeError;
     }
 
@@ -289,6 +288,17 @@ pub fn AudioFileGetProperty(
         .unwrap();
 
     match in_property_id {
+        kAudioFilePropertyFileFormat => {
+            let bundle_id = env.bundle.bundle_identifier();
+            if bundle_id.starts_with("com.ea.mirrorsedge.bv")
+                || bundle_id.starts_with("com.ea.mirrorsedge.inc")
+            {
+                log!("Applying game-specific hack for Mirror's Edge: returning WAVE for kAudioFilePropertyFileFormat in AudioFileGetProperty()");
+                env.mem.write(out_property_data.cast(), fourcc(b"WAVE"));
+            } else {
+                todo!()
+            }
+        }
         kAudioFilePropertyDataFormat => {
             let desc = AudioStreamBasicDescription::from_audio_description(
                 host_object.audio_file.audio_description(),
@@ -309,16 +319,7 @@ pub fn AudioFileGetProperty(
                 .write(out_property_data.cast(), packet_size_upper_bound);
         }
         kAudioFilePropertyEstimatedDuration => {
-            let AudioDescription {
-                sample_rate,
-                bytes_per_packet,
-                frames_per_packet,
-                ..
-            } = host_object.audio_file.audio_description();
-            assert!(bytes_per_packet != 0);
-            let estimated_duration: f64 = host_object.audio_file.byte_count() as f64
-                * frames_per_packet as f64
-                / (bytes_per_packet as f64 * sample_rate);
+            let estimated_duration = host_object.audio_file.estimated_duration();
             env.mem.write(out_property_data.cast(), estimated_duration);
         }
         kAudioFilePropertyPacketTableInfo => {
@@ -477,3 +478,21 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(AudioFileClose(_)),
     export_c_func!(AudioFileStreamOpen(_, _, _, _, _)),
 ];
+
+/// Helper function. Used by `AudioFileOpenWithCallbacks()` function and
+/// `[AVAudioPlayer initWithData:error:]` method.
+pub(crate) fn guest_audio_file_read_from_vec(
+    env: &mut Environment,
+    data_vec: Vec<u8>,
+) -> Result<AudioFileID, audio::AudioFileOpenError> {
+    let audio_file = audio::AudioFile::read_from_vec(data_vec)?;
+    let guest_audio_file = env.mem.alloc_and_write(OpaqueAudioFileID { _filler: 0 });
+
+    let host_object = AudioFileHostObject { audio_file };
+
+    State::get(&mut env.framework_state)
+        .audio_files
+        .insert(guest_audio_file, host_object);
+
+    Ok(guest_audio_file)
+}
